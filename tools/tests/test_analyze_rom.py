@@ -7,10 +7,11 @@ from pathlib import Path
 
 import analyze_rom
 from worlds.medabots_rpg.data_loader import get_world_data
-from worlds.medabots_rpg.test.support import SCRIPT_START, build_rom
+from worlds.medabots_rpg.test.support import SCRIPT_START, TEST_SCRIPT, build_rom
 
 DATA = get_world_data()
 BATTLES = next(v for v in DATA.rom.versions if v.id == "metabee_us").battles_offset
+RECORDS = BATTLES - 0x3000
 
 
 def battle_record(character, bots):
@@ -24,8 +25,11 @@ def battle_record(character, bots):
 def rom_with_content():
     # at script offset 0x1C: give medal 15, no-op, give medal 1; later a second 0x3C
     rom = bytearray(build_rom(scripts=bytes([0x3C, 0x0F, 0x00, 0x3C, 0x01, 0x00, 0x00, 0x3C, 0x1B])))
+    # the battle table holds pointers; every battle points at the same record here
     record = battle_record(0x13, [(0, 0, 0, 0, 1, 5), (120, 120, 120, 120, 0, 9)])
-    rom[BATTLES:BATTLES + 40] = record
+    rom[RECORDS:RECORDS + 40] = record
+    for index in range(245):
+        rom[BATTLES + 4 * index:BATTLES + 4 * index + 4] = (0x08000000 + RECORDS).to_bytes(4, "little")
     return bytes(rom)
 
 
@@ -47,6 +51,13 @@ class TestAnalysis(unittest.TestCase):
         self.assertGreater(scripts["instruction_count"], 1000)
         self.assertEqual(scripts["opcode_histogram"]["0x3C"], 3)
 
+    def test_reward_scripts_are_listed_by_script_number(self):
+        rewards = analyze_rom.analyze(build_rom(scripts=bytes([0x3C, 0x0F, 0x3A, 0x01, 0xF4, 0x13, 0x00, 0x01])))
+        listed = rewards["reward_scripts"]
+        self.assertEqual(listed["count"], 3)
+        self.assertEqual(listed["scripts"], [{"script": TEST_SCRIPT, "rewards": ["medal Bat", "money 5000"],
+                                              "sets_flags": [1], "sets_own_flag": True}])
+
     def test_battles_are_decoded_with_names(self):
         first = self.report["battles"][0]
         self.assertEqual(first["character"], "Dr. Aki")
@@ -64,7 +75,7 @@ class TestAnalysis(unittest.TestCase):
 
     def test_a_used_identity_block_is_detected(self):
         rom = bytearray(rom_with_content())
-        rom[DATA.memory_map.ap_block_offset + 3] = 0
+        rom[DATA.memory_map.ap_block_offset + 3] = 0x12
         self.assertFalse(analyze_rom.analyze(bytes(rom))["identity_block"]["blank"])
 
     def test_watched_opcode_context(self):
@@ -77,7 +88,7 @@ class TestAnalysis(unittest.TestCase):
         self.assertIn("0xEE", report["scripts"]["stopped_early"])
 
     def test_blank_run_finder(self):
-        data = bytes([1]) + b"\xFF" * 300 + bytes([2]) + b"\xFF" * 10 + bytes([3]) + b"\xFF" * 500
+        data = bytes([1]) + bytes(300) + bytes([2]) + bytes(10) + bytes([3]) + bytes(500)
         runs = analyze_rom.blank_runs(data, minimum=256)
         self.assertEqual([r["length"] for r in runs], ["0x1F4", "0x12C"])
 

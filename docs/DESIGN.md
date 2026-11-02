@@ -28,8 +28,16 @@ that a tool produces**, never a guess in code.
 | Battle (245), part (480) and encounter (191) record layouts | The real story order |
 
 Locations that were only *inferred from a documented map name* (for example *Fort Fiyun - 4 Chest Room*) carry
-`status: "candidate"`. Calibration promotes them to `status: "verified"`. A ROM identity of "unverified" propagates:
-generation, patching and the client all know whether the data behind a seed was verified.
+`status: "candidate"`. Calibration promotes them to `status: "verified"`, or to `status: "absent"` when the spot turns
+out to hold nothing detectable (the row keeps its ID but is never selected). A ROM identity of "unverified" propagates:
+generation, patching and the client all know whether the data behind a seed was verified. The world counts as
+verified only when the memory map, the goal flag and every existing location are.
+
+Calibration (see [CALIBRATION_NOTES.md](CALIBRATION_NOTES.md)) found the shapes the game really uses: event flags two
+per byte, numbered like the event scripts and map objects; part counts of two bytes per part; and a medal case of
+64-byte records rather than bits. The client builds a new medal's record exactly like the game's own routine, from the
+medal table in the player's ROM, so no game data ships with the world. Script rewrites name the event script and the
+reward opcodes, because script positions differ between versions while their numbers do not.
 
 ## 3. The randomizer
 
@@ -92,10 +100,10 @@ entries are unknown in a verified memory map is dropped from the pool at generat
 | G5 | Missable spots never hold progression. | `LocationProgressType.EXCLUDED`. |
 | G6 | Story scripts are never damaged. | A rewrite carries the expected original bytes and aborts on any mismatch; overlapping rewrites are refused. |
 | G7 | The player always has a complete bot. | Archipelago items only ever add parts or medals; nothing is removed. |
-| G8 | Delivery is safe and idempotent. | Parts and medals are *state based* (ensured to be owned, so repeating or loading an older save is harmless). Money and traps use a counter kept on the server. Nothing is delivered unless the game is in a verified safe state; every write is guarded by the bytes that were read; four deliveries per tick at most. |
+| G8 | Delivery is safe and idempotent. | Parts and medals are *state based* (ensured to be owned, so repeating or loading an older save is harmless). Money and traps use a counter kept on the server. Nothing is delivered unless the game is in a verified safe state and not in a battle; every write is guarded by the bytes that were read; four deliveries per tick at most. |
 | G9 | Traps cannot soft-lock. | Safe state only, expiry, no stacking, deferral rather than dropping. |
 | G10 | The ROM matches the seed and the world version. | The ROM carries digests of the seed and of the data; the client compares them with the server's `seed_name` and the slot data and stops with an explanation on a mismatch. |
-| G11 | Only recognised ROMs are patched, and only blank memory is written. | Header check of the four versions; the identity block region must be blank. |
+| G11 | Only recognised ROMs are patched, and only blank memory is written. | Header check of the four versions; the identity block region must be blank (`0x00`, the ROMs' padding). Script rewrites only replace instructions with the expected reward opcodes, inside scripts that parse, with the one-byte no-op. |
 | G12 | Item and location IDs never change. | Explicit IDs, a test that pins a sample, and the rule in DEVELOPMENT.md. |
 
 ## 5. YAML options (v0.1.0)

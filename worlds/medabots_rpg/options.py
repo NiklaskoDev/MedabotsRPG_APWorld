@@ -101,7 +101,8 @@ class ShuffleMinigamePrizes(Toggle):
 class Shopsanity(Toggle):
     """Buying something in a shop becomes a check.
 
-    Shops then sell an item for another player's game, so you may want some spare money.
+    Not available yet: the game keeps no record of purchases, so no shop can be detected as a check and this option
+    currently adds no locations.
     """
 
     display_name = "Shop Purchases"

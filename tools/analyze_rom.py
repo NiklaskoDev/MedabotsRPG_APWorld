@@ -12,6 +12,8 @@ The tool never modifies the ROM and writes nothing but the optional JSON report.
 * every battle record (who fights, with which parts and medal);
 * a walk through all event scripts: an opcode histogram, every "give medal" instruction with its script offset (these
   are the reward instructions that become checks), and on request every occurrence of any opcode with its context;
+* every event script (by number) that gives an item, part, money, a medal or a Medabot, and the event flags it sets.
+  Script n is also map object n and owns event flag n, so these are the candidates for locations;
 * whether the memory map's identity-block region is still blank, plus the largest blank runs of the ROM as
   alternatives. See docs/CALIBRATION.md for what to do with the results.
 """
@@ -26,10 +28,23 @@ from typing import Any
 
 from worlds.medabots_rpg.data_loader import WorldData, get_world_data
 from worlds.medabots_rpg.rom_info import RomError, identify_rom
-from worlds.medabots_rpg.rom_scripts import ScriptError, find_signature, iter_instructions, locate_script_region
+from worlds.medabots_rpg.rom_scripts import (
+    ScriptError,
+    find_signature,
+    iter_instructions,
+    iter_script,
+    locate_script_bank,
+    locate_script_region,
+)
 
 GIVE_MEDAL_OPCODE = 0x3C
-BLANK = 0xFF
+ROM_BASE = 0x08000000
+REWARD_OPCODES = {0x36: "item", 0x38: "part", 0x3A: "money", 0x3C: "medal", 0x3D: "medabot"}
+"""Script opcodes that hand the player something; 'neutralize' entries in locations.json name these."""
+SET_FLAG_OPCODE = 0x13
+MONEY_SCALE = 10
+"""Opcode 0x3A adds ten times its operand to the money."""
+BLANK = 0x00  # the four ROMs pad their unused space with 0x00
 CONTEXT_BYTES = 6
 
 
@@ -51,12 +66,17 @@ def locate_tables(rom: bytes, data: WorldData) -> dict[str, Any]:
 
 
 def decode_battles(rom: bytes, data: WorldData, offset: int) -> list[dict[str, Any]]:
-    """Decode the battle table: character, number of bots, and each bot's parts, medal and medal level."""
+    """Decode the battle table: character, number of bots, and each bot's parts, medal and medal level.
+
+    ``offset`` is a table of 32-bit ROM pointers, one per battle, to the 40-byte records (this is how the battle code
+    at 0x08011E84 in Metabee USA reads it).
+    """
     layout = data.tables.record_layouts["battle"]
     size, count = layout["size"], layout["count"]
     tables, battles = data.tables, []
     for index in range(count):
-        record = rom[offset + index * size: offset + (index + 1) * size]
+        pointer = int.from_bytes(rom[offset + index * 4: offset + index * 4 + 4], "little") - ROM_BASE
+        record = rom[pointer: pointer + size] if 0 <= pointer < len(rom) else b""
         if len(record) < size:
             break
         bots = []
@@ -117,8 +137,47 @@ def analyze_scripts(rom: bytes, data: WorldData, watch_opcodes: tuple[int, ...] 
     }
 
 
+def describe_reward(opcode: int, operands: bytes, data: WorldData) -> str:
+    tables = data.tables
+    kind = REWARD_OPCODES[opcode]
+    if kind == "part" and len(operands) >= 2:
+        model, slot = operands[0], operands[1]
+        part = _name(tuple(row[slot] for row in tables.parts), model, "?") if slot < 4 else "?"
+        return f"part {part} ({_name(tables.bots, model, '?')})"
+    if kind == "medal":
+        return f"medal {_name(tables.medals, operands[0], '?')}"
+    if kind == "money":
+        return f"money {int.from_bytes(operands[:2], 'big') * MONEY_SCALE}"
+    if kind == "item":
+        return f"item 0x{operands[0]:02X} x{max(operands[1], 1)}"
+    return "medabot"
+
+
+def reward_scripts(rom: bytes, data: WorldData) -> dict[str, Any]:
+    """Every event script that gives something, with the flags it sets (by script number)."""
+    try:
+        bank = locate_script_bank(rom, data.rom)
+    except ScriptError as exc:
+        return {"error": str(exc), "scripts": []}
+    found, unparsed = [], []
+    for number in range(len(bank.starts)):
+        rewards, flags = [], []
+        try:
+            for _, instruction in iter_script(rom, bank, number, data.tables):
+                if instruction.opcode in REWARD_OPCODES:
+                    rewards.append(describe_reward(instruction.opcode, instruction.operands, data))
+                elif instruction.opcode == SET_FLAG_OPCODE:
+                    flags.append(int.from_bytes(instruction.operands[:2], "big"))
+        except ScriptError:
+            unparsed.append(number)
+            continue
+        if rewards:
+            found.append({"script": number, "rewards": rewards, "sets_flags": flags, "sets_own_flag": number in flags})
+    return {"bank": hex_offset(bank.base), "count": len(bank.starts), "unparsed": unparsed, "scripts": found}
+
+
 def blank_runs(rom: bytes, minimum: int = 256, limit: int = 8) -> list[dict[str, str]]:
-    """The longest runs of blank (0xFF) bytes, longest first: candidates for where the world may store data."""
+    """The longest runs of blank (0x00) bytes, longest first: candidates for where the world may store data."""
     runs: list[tuple[int, int]] = []
     start = None
     for index, byte in enumerate(rom):
@@ -158,6 +217,7 @@ def analyze(rom: bytes, data: WorldData | None = None, watch_opcodes: tuple[int,
         "blank_runs": blank_runs(rom),
         "battles": decode_battles(rom, data, version.battles_offset),
         "scripts": analyze_scripts(rom, data, watch_opcodes),
+        "reward_scripts": reward_scripts(rom, data),
     }
 
 
@@ -169,7 +229,7 @@ def _describe_block(block: dict[str, Any]) -> str:
 
 
 def render_summary(report: dict[str, Any]) -> str:
-    scripts, block = report["scripts"], report["identity_block"]
+    scripts, block, rewards = report["scripts"], report["identity_block"], report["reward_scripts"]
     lines = [
         f"ROM: {report['rom']['label']} ({report['rom']['size']} bytes)",
         "",
@@ -182,6 +242,12 @@ def render_summary(report: dict[str, Any]) -> str:
         + (f"  (stopped early: {scripts['stopped_early']})" if scripts["stopped_early"] else ""),
         f"'Give medal' instructions: {len(scripts['give_medal'])}",
         *(f"  script +{m['script_offset']:<8} {m['medal']:<12} ({m['raw']})" for m in scripts["give_medal"]),
+        "",
+        f"Reward scripts: {len(rewards['scripts'])}"
+        + (f" of {rewards['count']} in the bank at {rewards['bank']}" if "bank" in rewards else
+           f" (script bank not found: {rewards['error']})"),
+        *(f"  script {r['script']:<5} {'sets own flag' if r['sets_own_flag'] else '             '} "
+          f"{'; '.join(r['rewards'])}" for r in rewards["scripts"]),
         "",
         "Identity block (memory_map.json ap_block): " + _describe_block(block),
         "Largest blank ROM runs (alternatives):",

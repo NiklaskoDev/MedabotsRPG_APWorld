@@ -13,7 +13,7 @@ import json
 import pkgutil
 from collections import Counter
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cached_property, lru_cache
 from typing import Any, Protocol
 
@@ -28,6 +28,7 @@ from .constants import (
     KIND_TRAP,
     PART_SLOT_GROUPS,
     PART_SLOTS,
+    STATUS_ABSENT,
     STATUS_CANDIDATE,
     STATUS_VERIFIED,
 )
@@ -80,6 +81,8 @@ class RomVersion:
     battles_offset: int
     starter_offset: int
     text_offset: int
+    medal_table_offset: int
+    """File offset of the 16-byte-per-medal base table the game builds new medal records from."""
 
 
 @dataclass(frozen=True)
@@ -89,6 +92,8 @@ class Signature:
     pattern: bytes
     target_adjust: int = 0
     region_length: int | None = None
+    bank_offset: int | None = None
+    """For the event scripts: where the script bank (header and index tables) starts, relative to the match."""
 
 
 @dataclass(frozen=True)
@@ -151,12 +156,17 @@ class LocationDef:
     detect: Mapping[str, Any] | None = None
     """How the client notices the check, e.g. ``{"type": "flag", "table": "game_flags", "bit": 12}``."""
     neutralize: Mapping[str, Any] | None = None
-    """Script bytes to overwrite so the vanilla reward is not given on top of the Archipelago item:
-    ``{"offset": "0x..", "expect": "3c0f", "replace": "..."}`` with ``offset`` relative to the script region."""
+    """Vanilla reward instructions to blank out so the reward is not given on top of the Archipelago item:
+    ``{"scripts": [1609], "opcodes": ["3A"]}``. Scripts are addressed by number, which is the same in all four ROM
+    versions even where their position in the ROM differs."""
 
     @property
     def verified(self) -> bool:
         return self.status == STATUS_VERIFIED
+
+    @property
+    def absent(self) -> bool:
+        return self.status == STATUS_ABSENT
 
 
 @dataclass(frozen=True)
@@ -178,7 +188,7 @@ class TableRef:
     """Location and shape of a table in game memory."""
 
     address: int
-    kind: str  # "bitfield", "bytes", "u8", "u16" or "u32"
+    kind: str  # "bitfield", "bytes", "records", "u8", "u16" or "u32"
     size: int
     values: tuple[int, ...] | None = None
     """For state flags: the byte values that mean "yes" (for example the values of an 'overworld, idle' state)."""
@@ -186,6 +196,12 @@ class TableRef:
     """For the medapart table: ``model_major`` (index = model * 4 + slot) or ``slot_major`` (slot * models + model)."""
     maximum: int | None = None
     """For numeric tables such as money: the largest value the game accepts."""
+    stride: int = 1
+    """For ``bytes`` tables: bytes per entry. The first byte of an entry is its count (non-zero means owned)."""
+    record_size: int | None = None
+    """For ``records`` tables (the medal case): bytes per record."""
+    also: tuple[TableRef, ...] = ()
+    """For state flags: further conditions that must hold as well (a state entry given as a list in the JSON)."""
 
 
 @dataclass(frozen=True)
@@ -226,6 +242,8 @@ class WorldData:
     areas: tuple[Area, ...]
     goal_event: str
     goal_detect: Mapping[str, Any] | None
+    goal_status: str
+    """``verified`` once the goal detection was seen to fire at the real end of the story, else ``candidate``."""
     locations: tuple[LocationDef, ...]
     location_categories: Mapping[str, str]
     """Location category key -> human readable description."""
@@ -253,8 +271,9 @@ class WorldData:
 
     @property
     def is_verified(self) -> bool:
-        """True when the memory map and every location are confirmed against a real ROM."""
-        return self.memory_map.verified and all(loc.verified for loc in self.locations)
+        """True when the memory map, the goal flag and every existing location are confirmed against a real ROM."""
+        return (self.memory_map.verified and self.goal_detect is not None and self.goal_status == STATUS_VERIFIED
+                and all(loc.verified for loc in self.locations if not loc.absent))
 
 
 def part_item_name(tables: GameTables, model: int, slot: int) -> str:
@@ -301,6 +320,7 @@ def _parse_rom(raw: Mapping[str, Any]) -> RomInfo:
             battles_offset=_int(v["battles_offset"], f"{v['id']}.battles_offset"),
             starter_offset=_int(v["starter_offset"], f"{v['id']}.starter_offset"),
             text_offset=_int(v["text_offset"], f"{v['id']}.text_offset"),
+            medal_table_offset=_int(v["medal_table_offset"], f"{v['id']}.medal_table_offset"),
         )
         for v in raw["versions"]
     )
@@ -309,6 +329,7 @@ def _parse_rom(raw: Mapping[str, Any]) -> RomInfo:
             pattern=bytes.fromhex(sig["bytes"]),
             target_adjust=sig.get("target_adjust", 0),
             region_length=_int(sig["region_length"], f"{name}.region_length") if "region_length" in sig else None,
+            bank_offset=_int(sig["bank_offset"], f"{name}.bank_offset") if "bank_offset" in sig else None,
         )
         for name, sig in raw["signatures"].items()
         if isinstance(sig, dict)
@@ -346,7 +367,19 @@ def _parse_table_ref(entry: Mapping[str, Any] | None, what: str) -> TableRef | N
         values=tuple(entry["values"]) if "values" in entry else None,
         layout=entry.get("layout"),
         maximum=entry.get("maximum"),
+        stride=entry.get("stride", 1),
+        record_size=entry.get("record_size"),
     )
+
+
+def _parse_state_ref(entry: Mapping[str, Any] | list | None, what: str) -> TableRef | None:
+    """A state flag: one table ref, or a list of them that must all hold (the first one carries the others)."""
+    if not isinstance(entry, list):
+        return _parse_table_ref(entry, what)
+    if not entry:
+        raise DataError(f"{what}: an empty list of conditions")
+    conditions = [_parse_table_ref(part, f"{what}[{i}]") for i, part in enumerate(entry)]
+    return replace(conditions[0], also=tuple(conditions[1:]))
 
 
 def _parse_memory_map(raw: Mapping[str, Any]) -> MemoryMap:
@@ -357,7 +390,7 @@ def _parse_memory_map(raw: Mapping[str, Any]) -> MemoryMap:
         ap_block_offset=_int(ap_block["rom_offset"], "ap_block.rom_offset") if ap_block else None,
         ap_block_size=ap_block["size"] if ap_block else None,
         tables={k: _parse_table_ref(v, f"tables.{k}") for k, v in raw["tables"].items()},
-        state={k: _parse_table_ref(v, f"state.{k}") for k, v in raw["state"].items()},
+        state={k: _parse_state_ref(v, f"state.{k}") for k, v in raw["state"].items()},
         optional_tables={k: _parse_table_ref(v, f"optional_tables.{k}")
                          for k, v in raw["optional_tables"].items()},
     )
@@ -461,16 +494,66 @@ def rule_problems(expr: Any, known_names: set[str], known_groups: set[str], wher
     return [f"{where}: unknown rule keyword {key!r}"]
 
 
-def _neutralize_problems(loc: LocationDef) -> list[str]:
+MAX_EVENT_FLAG = 0xFFF
+"""Event flags are 12-bit numbers (the game masks them with 0xFFF)."""
+
+
+def _neutralize_problems(loc: LocationDef, tables: GameTables) -> list[str]:
     entry = loc.neutralize or {}
     try:
-        _int(entry["offset"], "offset")
-        expect, replace = bytes.fromhex(entry["expect"]), bytes.fromhex(entry["replace"])
-    except (KeyError, ValueError, DataError) as exc:
+        scripts = [_int(n, "script") for n in entry["scripts"]]
+        opcodes = [int(op, 16) for op in entry["opcodes"]]
+    except (KeyError, TypeError, ValueError, DataError) as exc:
         return [f"location {loc.name!r}: invalid 'neutralize' entry ({exc})"]
-    if not expect or len(expect) != len(replace):
-        return [f"location {loc.name!r}: 'neutralize' expect and replace must be non-empty and the same length"]
+    if not scripts or not opcodes:
+        return [f"location {loc.name!r}: 'neutralize' needs at least one script and one opcode"]
+    if any(not 0 <= n <= MAX_EVENT_FLAG for n in scripts):
+        return [f"location {loc.name!r}: 'neutralize' script numbers must be between 0 and {MAX_EVENT_FLAG}"]
+    if any(not 0 <= op < len(tables.opcode_lengths) or op == tables.variable_length_opcode for op in opcodes):
+        return [f"location {loc.name!r}: 'neutralize' opcodes must be fixed-length script opcodes"]
     return []
+
+
+def detect_problems(detect: Mapping[str, Any] | None, memory_map: MemoryMap, where: str) -> list[str]:
+    """Check a ``detect`` entry: ``flag`` (a raw bit of a table), ``event`` (an event's done flag),
+    ``event_value`` (an event's 3-bit value reaching ``value``) or ``byte_at_least`` (one byte of a table reaching
+    ``value``, such as the chapter counter)."""
+    if detect is None:
+        return []
+    kind = detect.get("type")
+    if kind == "flag":
+        if detect.get("table") not in memory_map.tables or not isinstance(detect.get("bit"), int):
+            return [f"{where}: a 'flag' detection needs a known 'table' and an integer 'bit'"]
+        return []
+    if kind in ("event", "event_value"):
+        if not isinstance(detect.get("flag"), int) or not 0 <= detect["flag"] <= MAX_EVENT_FLAG:
+            return [f"{where}: an {kind!r} detection needs an event 'flag' between 0 and {MAX_EVENT_FLAG}"]
+        if kind == "event_value" and detect.get("value") not in range(1, 8):
+            return [f"{where}: an 'event_value' detection needs a 'value' between 1 and 7"]
+        return []
+    if kind == "byte_at_least":
+        ref = memory_map.tables.get(detect.get("table"))
+        if ref is None or not isinstance(detect.get("offset"), int) or not 0 <= detect["offset"] < ref.size:
+            return [f"{where}: a 'byte_at_least' detection needs a known 'table' and an 'offset' inside it"]
+        if not isinstance(detect.get("value"), int) or not 0 < detect["value"] < 256:
+            return [f"{where}: a 'byte_at_least' detection needs a 'value' between 1 and 255"]
+        return []
+    return [f"{where}: unknown detection type {kind!r}"]
+
+
+def _memory_map_problems(memory_map: MemoryMap) -> list[str]:
+    problems = []
+    for section in ("tables", "state", "optional_tables"):
+        for name, entry in getattr(memory_map, section).items():
+            for ref in (entry, *entry.also) if entry is not None else ():
+                where = f"memory map {section}.{name}"
+                if ref.kind not in ("bitfield", "bytes", "records", "u8", "u16", "u32"):
+                    problems.append(f"{where}: unknown kind {ref.kind!r}")
+                if ref.stride < 1 or ref.size % ref.stride:
+                    problems.append(f"{where}: size must be a multiple of a stride of at least 1")
+                if ref.kind == "records" and (not ref.record_size or ref.size % ref.record_size):
+                    problems.append(f"{where}: a records table needs a record_size that divides its size")
+    return problems
 
 
 def _duplicates(values: Iterable[Any]) -> list[Any]:
@@ -537,12 +620,13 @@ def validate(data: WorldData) -> list[str]:
             problems.append(f"location {loc.name!r} references unknown map {loc.map_name!r}")
         if loc.category not in categories:
             problems.append(f"location {loc.name!r} has unknown category {loc.category!r}")
-        if loc.status not in (STATUS_CANDIDATE, STATUS_VERIFIED):
+        if loc.status not in (STATUS_CANDIDATE, STATUS_VERIFIED, STATUS_ABSENT):
             problems.append(f"location {loc.name!r} has unknown status {loc.status!r}")
         if loc.verified and not loc.detect:
             problems.append(f"location {loc.name!r} is verified but has no 'detect' entry")
+        problems += detect_problems(loc.detect, data.memory_map, f"location {loc.name!r}")
         if loc.neutralize:
-            problems += _neutralize_problems(loc)
+            problems += _neutralize_problems(loc, tables)
 
     names_for_rules = {item.name for item in data.items} | {area.clear_event for area in data.areas}
     names_for_rules.add(data.goal_event)
@@ -558,7 +642,12 @@ def validate(data: WorldData) -> list[str]:
             except DataError:
                 problems.append(f"trap {item.name!r} requires unknown memory map entry {path!r}")
 
+    problems += detect_problems(data.goal_detect, data.memory_map, "regions.json goal_detect")
+    if data.goal_status not in (STATUS_CANDIDATE, STATUS_VERIFIED):
+        problems.append(f"regions.json goal_status must be {STATUS_CANDIDATE!r} or {STATUS_VERIFIED!r}")
+
     # Memory map
+    problems += _memory_map_problems(data.memory_map)
     if data.memory_map.verified and data.memory_map.missing:
         problems.append(f"memory map is marked verified but is missing {data.memory_map.missing}")
     return problems
@@ -585,6 +674,7 @@ def load_world_data(source: DataSource | None = None) -> WorldData:
         areas=areas,
         goal_event=raw["regions"]["goal_event"],
         goal_detect=raw["regions"].get("goal_detect"),
+        goal_status=raw["regions"].get("goal_status", STATUS_CANDIDATE),
         locations=_build_locations(areas, raw["locations"]),
         location_categories=dict(raw["locations"]["categories"]),
         items=_build_items(tables, raw["items"]),

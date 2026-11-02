@@ -12,9 +12,9 @@
     "rokusho": {"bots": ["Giggly Jelly", "Orkamar", "Spidar"], "medals": ["Kuwagata"]}
   },
   "consumables": [
-    {"id": 12001, "name": "Money Pouch (Small)", "effect": {"type": "money", "amount": 200}, "weight": 5},
-    {"id": 12002, "name": "Money Pouch (Medium)", "effect": {"type": "money", "amount": 1000}, "weight": 3},
-    {"id": 12003, "name": "Money Pouch (Large)", "effect": {"type": "money", "amount": 5000}, "weight": 1}
+    {"id": 12001, "name": "Money Pouch (Small)", "effect": {"type": "money", "amount": 1000}, "weight": 5},
+    {"id": 12002, "name": "Money Pouch (Medium)", "effect": {"type": "money", "amount": 5000}, "weight": 3},
+    {"id": 12003, "name": "Money Pouch (Large)", "effect": {"type": "money", "amount": 20000}, "weight": 1}
   ],
   "traps": [
     {"id": 13001, "name": "Money Drain Trap", "trap": "money_drain", "requires": ["tables.money", "state.safe_to_deliver"]},

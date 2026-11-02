@@ -28,8 +28,8 @@ class MedabotsLocation(Location):
 
 
 def select_locations(data: WorldData, options: MedabotsOptions) -> list[LocationDef]:
-    """The checks that exist for these options, in data order."""
-    return [loc for loc in data.locations if getattr(options, CATEGORY_OPTIONS[loc.category])]
+    """The checks that exist for these options, in data order. Locations calibration found absent never exist."""
+    return [loc for loc in data.locations if not loc.absent and getattr(options, CATEGORY_OPTIONS[loc.category])]
 
 
 def progress_type(location: LocationDef, options: MedabotsOptions) -> LocationProgressType:

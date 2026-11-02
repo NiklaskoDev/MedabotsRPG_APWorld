@@ -7,8 +7,8 @@ Version** on the Game Boy Advance. Medals, medaparts and money become checks tha
 multiworld, while the story itself stays untouched.
 
 > **Status: pre-release (`0.x`).** Generation, options, logic, the patcher and the BizHawk client are implemented and
-> tested, but the parts that depend on the game's memory layout have **not yet been verified against a real ROM**. By
-> default the generator refuses to build a seed from unverified data. See [Status](#status).
+> tested, and the game data (memory addresses, check locations, the story goal) has been confirmed in BizHawk. A full
+> multiworld play-test is still to come, and there are only 11 checks so far. See [Status](#status).
 
 ## Features
 
@@ -28,10 +28,12 @@ multiworld, while the story itself stays untouched.
 |---|---|
 | YAML options, item pool, logic, traps, WebHost page | Implemented and tested |
 | Item names and IDs | From documented ROM tables (480 parts, 30 medals) |
-| Check locations | *Candidates* inferred from documented map names, not yet verified |
-| Patcher (`.apmedabots`) | Implemented; refuses unsupported, patched or mismatched ROMs |
-| BizHawk client | Implemented and tested against a fake BizHawk; **memory addresses unverified** |
-| In-game verification | Pending, see [docs/CALIBRATION.md](docs/CALIBRATION.md) |
+| Check locations | 11 confirmed in the game (9 with the default options); 11 listed spots turned out to hold nothing |
+| Story goal | The ending, confirmed in the game |
+| Patcher (`.apmedabots`) | Implemented; refuses unsupported, patched or mismatched ROMs; tested on all four ROMs |
+| BizHawk client | Implemented and tested; memory addresses confirmed on Metabee (USA) and Rokusho (Europe) |
+| Traps | Money Drain and Ambush; Rusty Armor and Medal Nap are not available yet |
+| In-game verification | Done except the multiworld play-test, see [docs/CALIBRATION.md](docs/CALIBRATION.md) |
 
 ## Installing
 

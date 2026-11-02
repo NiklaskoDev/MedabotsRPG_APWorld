@@ -5,8 +5,9 @@ applied to the player's own ROM in three steps:
 
 1. ``verify_rom``: the ROM must be a supported version, the patch must match this world's data, and the memory the
    patch writes to must still be blank.
-2. ``apply_script_rewrites``: overwrite vanilla reward instructions, but only where the expected original bytes are
-   found (so story scripts can never be damaged by a wrong ROM).
+2. ``apply_script_rewrites``: blank out the vanilla reward instructions of the selected locations' scripts with the
+   game's one-byte no-op, but only where the script parses and holds such an instruction (so story scripts can never
+   be damaged by a wrong ROM).
 3. ``apply_tokens``: write the seed identity block.
 """
 from __future__ import annotations
@@ -23,13 +24,16 @@ from worlds.Files import APPatchExtension, APProcedurePatch, APTokenMixin, APTok
 from .constants import GAME_NAME
 from .data_loader import LocationDef, WorldData, get_world_data
 from .rom_info import RomError, identify_rom
-from .rom_scripts import ScriptError, locate_script_region
+from .rom_scripts import ScriptError, iter_script, locate_script_bank
 from .version import world_version
 
 META_FILE = "meta.json"
 TOKEN_FILE = "token_data.bin"
-PATCH_FORMAT = 1
-BLANK_BYTE = 0xFF
+PATCH_FORMAT = 2
+BLANK_BYTE = 0x00
+"""All four ROMs pad their unused space (where the identity block goes) with 0x00."""
+NO_OP = 0x00
+"""Script opcode 0x00 does nothing and is one byte long, so any instruction can be blanked out with it."""
 
 IDENTITY_MAGIC = b"APMEDABT"
 IDENTITY_FORMAT = 1
@@ -80,14 +84,21 @@ class ApIdentity:
 # ---------------------------------------------------------------------------------------------------------------------
 # Patch contents
 # ---------------------------------------------------------------------------------------------------------------------
-def collect_rewrites(locations: list[LocationDef]) -> list[dict[str, str]]:
-    """Script rewrites for the given locations. Overlapping rewrites are a data bug and are refused."""
-    rewrites = [dict(loc.neutralize) for loc in locations if loc.neutralize]
-    spans = sorted((int(r["offset"], 0), int(r["offset"], 0) + len(bytes.fromhex(r["expect"]))) for r in rewrites)
-    for (_, end), (start, _) in zip(spans, spans[1:], strict=False):
-        if start < end:
-            raise RomError(f"Two script rewrites overlap at script offset 0x{start:X}. This is a data error.")
-    return rewrites
+def collect_rewrites(locations: list[LocationDef]) -> list[dict[str, Any]]:
+    """Script rewrites for the given locations: ``{"script": n, "opcodes": [..]}``, one per script.
+
+    A script that two locations both want to rewrite is a data bug and is refused.
+    """
+    rewrites: dict[int, dict[str, Any]] = {}
+    for loc in locations:
+        if not loc.neutralize:
+            continue
+        for number in loc.neutralize["scripts"]:
+            number = int(number)
+            if number in rewrites:
+                raise RomError(f"Two locations rewrite event script {number}. This is a data error.")
+            rewrites[number] = {"script": number, "opcodes": [int(op, 16) for op in loc.neutralize["opcodes"]]}
+    return [rewrites[number] for number in sorted(rewrites)]
 
 
 def write_patch(
@@ -158,23 +169,26 @@ class MedabotsRPGPatchExtension(APPatchExtension):
         if not meta["rewrites"]:
             return rom
         try:
-            region = locate_script_region(rom, data.rom)
+            bank = locate_script_bank(rom, data.rom)
         except ScriptError as exc:
             raise RomError(str(exc)) from exc
 
         patched = bytearray(rom)
         for rewrite in meta["rewrites"]:
-            expect, replace = bytes.fromhex(rewrite["expect"]), bytes.fromhex(rewrite["replace"])
-            relative = int(rewrite["offset"], 0)
-            start = region.start + relative
-            if relative < 0 or relative + len(expect) > region.length:
-                raise RomError(f"A script rewrite at 0x{relative:X} lies outside the script region.")
-            if bytes(patched[start:start + len(expect)]) != expect:
+            number, opcodes = rewrite["script"], set(rewrite["opcodes"])
+            try:
+                found = [(offset, instruction) for offset, instruction in iter_script(rom, bank, number, data.tables)
+                         if instruction.opcode in opcodes]
+            except ScriptError as exc:
+                raise RomError(f"{exc} This ROM differs from the one the world was built for, so the patch was "
+                               "stopped before it could damage the game.") from exc
+            if not found:
                 raise RomError(
-                    f"Unexpected data at script offset 0x{relative:X}. This ROM differs from the one the world "
-                    "was built for, so the patch was stopped before it could damage the game."
+                    f"Event script {number} has no reward instruction to replace. This ROM differs from the one the "
+                    "world was built for, so the patch was stopped before it could damage the game."
                 )
-            patched[start:start + len(replace)] = replace
+            for offset, instruction in found:
+                patched[offset:offset + instruction.length] = bytes([NO_OP]) * instruction.length
         return bytes(patched)
 
 

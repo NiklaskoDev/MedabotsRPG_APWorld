@@ -1,5 +1,5 @@
 {
-  "_comment": "ROM identification and table offsets for the four English GBA releases. Source: STulling/Medabots-Randomizer (MIT), see NOTICE. Offsets are file offsets; 'header_id' is the 18 bytes at header_offset (12-byte title + 4-byte game code + 2-byte maker code).",
+  "_comment": "ROM identification and table offsets for the four English GBA releases. Source: STulling/Medabots-Randomizer (MIT), see NOTICE. Offsets are file offsets; 'header_id' is the 18 bytes at header_offset (12-byte title + 4-byte game code + 2-byte maker code). 'medal_table_offset' (30 entries of 16 bytes, the base data of every medal) was found by calibration: the game's add-medal routine at 0x08041D70 (Metabee USA) reads it, and the same 480 bytes sit at the listed offset in each version.",
   "header_offset": "0xA0",
   "header_length": 18,
   "versions": [
@@ -11,7 +11,8 @@
       "header_id": "MEDABOTSMTBVA8BEE9",
       "battles_offset": "0x3C19E0",
       "starter_offset": "0x78409B",
-      "text_offset": "0x47E43C"
+      "text_offset": "0x47E43C",
+      "medal_table_offset": "0x3B6138"
     },
     {
       "id": "metabee_eu",
@@ -21,7 +22,8 @@
       "header_id": "MEDABOTSMTBVA8BPE9",
       "battles_offset": "0x3C1B80",
       "starter_offset": "0x7852CF",
-      "text_offset": "0x47DF24"
+      "text_offset": "0x47DF24",
+      "medal_table_offset": "0x3B62D8"
     },
     {
       "id": "rokusho_us",
@@ -31,7 +33,8 @@
       "header_id": "MEDABOTSRKSVA9BEE9",
       "battles_offset": "0x3C1A00",
       "starter_offset": "0x7840C0",
-      "text_offset": "0x47E45C"
+      "text_offset": "0x47E45C",
+      "medal_table_offset": "0x3B6158"
     },
     {
       "id": "rokusho_eu",
@@ -41,7 +44,8 @@
       "header_id": "MEDABOTSRKSVA9BPE9",
       "battles_offset": "0x3C1BA0",
       "starter_offset": "0x7852F4",
-      "text_offset": "0x47DF44"
+      "text_offset": "0x47DF44",
+      "medal_table_offset": "0x3B62F8"
     }
   ],
   "unsupported_header_prefixes": {
@@ -49,8 +53,8 @@
     "MEDABOTSAX": "This is Medabots AX, a different game. Only Medabots: Metabee / Rokusho is supported."
   },
   "signatures": {
-    "_comment": "Byte patterns that locate tables inside any of the four ROMs (first match). 'event_scripts' is the start of the script bytecode region.",
-    "event_scripts": {"bytes": "2F1B031134008601010A", "region_length": "0x18000"},
+    "_comment": "Byte patterns that locate tables inside any of the four ROMs (first match). 'event_scripts' is a script inside the script bytecode region; its 'bank_offset' leads to the start of the script bank (the header and index tables the game reads through the pointer at 0x03005590), confirmed in all four ROMs.",
+    "event_scripts": {"bytes": "2F1B031134008601010A", "region_length": "0x18000", "bank_offset": "-0x8000"},
     "shop_contents": {"bytes": "1300FFFF130042FF1300"},
     "part_table": {"bytes": "0F220200231508010800"},
     "encounter_table": {"bytes": "000000009BF59BA79BF5"},
