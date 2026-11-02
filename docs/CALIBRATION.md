@@ -142,6 +142,10 @@ Generate a two-player seed (this world plus any other, or two Medabots slots) an
 * reaching the goal;
 * connect with `ws://` and with `wss://` (see the setup guide).
 
+[PLAYTEST.md](PLAYTEST.md) turns this list into a full plan: what calibration could not prove, the seeds to generate,
+every case with its priority and expected result, a suggested order, and the exit criteria for this step. Rusty Armor
+and Medal Nap are unavailable, so "every trap type" means Money Drain and Ambush.
+
 ## Step 6: release
 
 Edit `CHANGELOG.md`, set `world_version` in `worlds/medabots_rpg/archipelago.json` to `1.0.0`, commit, and tag

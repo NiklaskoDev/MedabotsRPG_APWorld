@@ -49,6 +49,7 @@ You need your own legally obtained English *Medabots: Metabee* or *Rokusho* ROM,
 * [Design](docs/DESIGN.md): what the randomizer does and how seeds are kept beatable
 * [Development guide](docs/DEVELOPMENT.md): working on the code, adding data and options, releasing
 * [Calibration](docs/CALIBRATION.md): turning unverified data into verified data using a real ROM
+* [Play-test plan](docs/PLAYTEST.md): the multiworld play-test that stands between the pre-release and `1.0.0`
 * [Changelog](CHANGELOG.md)
 
 ## Development

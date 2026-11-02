@@ -31,7 +31,7 @@ worlds/medabots_rpg/     the APWorld (the folder name must stay lower case and e
   docs/                  the game page and setup guide shown on the WebHost
   test/                  tests
 tools/                   developer tools, not shipped: dev.sh, analyze_rom.py, ramdiff.py, lua/, release_notes.py
-docs/                    DESIGN.md, CALIBRATION.md and this file
+docs/                    DESIGN.md, CALIBRATION.md, PLAYTEST.md and this file
 ```
 
 The modules without Archipelago imports can be used by the tools without installing Archipelago's dependencies. Keep
