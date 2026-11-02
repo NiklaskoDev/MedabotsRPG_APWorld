@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Release helper for the Release workflow: validates a version tag and prepares the GitHub release notes.
+"""Release helper for the Tag and Release workflows.
 
+    python tools/release_notes.py --derive-tag [--suffix rc.1]
     python tools/release_notes.py --tag v0.1.0 --notes-out notes.md
 
-It checks that the tag is ``v<world_version>`` (optionally with a ``-suffix`` such as ``-rc.1``), takes the matching
-section from CHANGELOG.md (a missing section is an error, so a release can never go out without notes), and prints
-``prerelease=true|false`` for the workflow. Versions below 1.0.0 and tags with a suffix are pre-releases.
+``--derive-tag`` prints the tag to create, ``v<world_version>`` with an optional ``-suffix`` such as ``-rc.1``. The
+version always comes from the manifest, so a tag can never disagree with the world it releases.
+
+``--tag`` checks a tag against the manifest, takes the matching section from CHANGELOG.md (a missing section is an
+error, so a release can never go out without notes), and prints ``prerelease=true|false``. Versions below 1.0.0 and
+tags with a suffix are pre-releases.
 """
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+SUFFIX = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.]*$")
 TAG = re.compile(r"^v(?P<version>(?P<major>\d+)\.\d+\.\d+)(?P<suffix>-[0-9A-Za-z][0-9A-Za-z.]*)?$")
 
 PRERELEASE_NOTICE = (
@@ -43,6 +48,16 @@ def parse_tag(tag: str) -> tuple[str, str, bool]:
     if not match:
         raise ReleaseError(f"'{tag}' is not a version tag. Use v<major>.<minor>.<patch>, e.g. v0.1.0 or v0.2.0-rc.1.")
     return match["version"], match["suffix"] or "", match["major"] == "0"
+
+
+def derive_tag(manifest: dict, suffix: str = "") -> str:
+    """The tag that releases the manifest's version, e.g. ``v0.1.0`` or ``v0.1.0-rc.1``."""
+    suffix = suffix.strip().removeprefix("-")
+    if suffix and not SUFFIX.match(suffix):
+        raise ReleaseError(f"'{suffix}' is not a valid suffix. Use letters, digits and dots, e.g. rc.1.")
+    tag = f"v{manifest['world_version']}" + (f"-{suffix}" if suffix else "")
+    parse_tag(tag)  # also proves that world_version itself is a plain major.minor.patch
+    return tag
 
 
 def read_manifest(path: Path) -> dict:
@@ -90,14 +105,21 @@ def prepare_release(tag: str, manifest: dict, changelog: str) -> Release:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--tag", required=True, help="the git tag being released, e.g. v0.1.0")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--tag", help="check this tag and prepare its release notes, e.g. v0.1.0")
+    mode.add_argument("--derive-tag", action="store_true", help="print the tag that releases the manifest's version")
+    parser.add_argument("--suffix", default="", help="with --derive-tag: a pre-release suffix such as rc.1")
     parser.add_argument("--manifest", type=Path, default=ROOT / "worlds/medabots_rpg/archipelago.json")
     parser.add_argument("--changelog", type=Path, default=ROOT / "CHANGELOG.md")
-    parser.add_argument("--notes-out", type=Path, help="where to write the release notes")
+    parser.add_argument("--notes-out", type=Path, help="with --tag: where to write the release notes")
     args = parser.parse_args(argv)
 
     try:
-        release = prepare_release(args.tag, read_manifest(args.manifest), args.changelog.read_text(encoding="utf-8"))
+        manifest = read_manifest(args.manifest)
+        if args.derive_tag:
+            print(f"tag={derive_tag(manifest, args.suffix)}")
+            return 0
+        release = prepare_release(args.tag, manifest, args.changelog.read_text(encoding="utf-8"))
     except (ReleaseError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

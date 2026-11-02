@@ -1,14 +1,37 @@
 name: Release
 
-# Pushing a tag such as v0.1.0 (or v0.2.0-rc.1) builds the APWorld and publishes a GitHub release.
+# Builds the APWorld and publishes a GitHub release for a version tag such as v0.1.0 or v0.2.0-rc.1.
 # The tag must equal v<world_version> from worlds/medabots_rpg/archipelago.json, and CHANGELOG.md must have a section
 # for that version. Versions below 1.0.0, and tags with a suffix, are published as pre-releases.
+#
+# It runs in three ways:
+#   * when such a tag is pushed by hand,
+#   * when called by the "Tag a release" workflow (a tag pushed by GitHub's built-in token does not trigger workflows,
+#     so that workflow calls this one directly),
+#   * manually, to (re)publish the release of an existing tag.
 
 on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+-*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release, e.g. v0.1.0"
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        description: "Existing tag to release, e.g. v0.1.0"
+        required: true
+        type: string
+      skip_checks:
+        description: "Skip lint and tests because the caller has already run them on this commit"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write # needed to create the release
@@ -17,8 +40,12 @@ jobs:
   release:
     name: Build and publish
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -27,12 +54,14 @@ jobs:
 
       - name: Check the tag and prepare the release notes
         id: release
-        run: python tools/release_notes.py --tag "$GITHUB_REF_NAME" --notes-out release_notes.md | tee -a "$GITHUB_OUTPUT"
+        run: python tools/release_notes.py --tag "$TAG" --notes-out release_notes.md | tee -a "$GITHUB_OUTPUT"
 
       - name: Lint
+        if: ${{ !inputs.skip_checks }}
         run: tools/dev.sh lint
 
       - name: Test
+        if: ${{ !inputs.skip_checks }}
         run: tools/dev.sh test
 
       - name: Build the APWorld
@@ -48,8 +77,8 @@ jobs:
         run: |
           flags=()
           if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
-          gh release create "$GITHUB_REF_NAME" dist/medabots_rpg.apworld dist/SHA256SUMS.txt \
-            --title "Medabots RPG $GITHUB_REF_NAME" \
+          gh release create "$TAG" dist/medabots_rpg.apworld dist/SHA256SUMS.txt \
+            --title "Medabots RPG $TAG" \
             --notes-file release_notes.md \
             --verify-tag \
             "${flags[@]}"

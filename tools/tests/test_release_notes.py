@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 import release_notes
-from release_notes import ReleaseError, changelog_section, parse_tag, prepare_release
+from release_notes import ReleaseError, changelog_section, derive_tag, parse_tag, prepare_release
 
 CHANGELOG = """# Changelog
 
@@ -36,6 +36,34 @@ class TestTags(unittest.TestCase):
         for tag in ("0.1.0", "v1.0", "v1.0.0.0", "release-1", "v1.0.0-", "vx.y.z", ""):
             with self.assertRaises(ReleaseError, msg=tag):
                 parse_tag(tag)
+
+
+class TestDeriveTag(unittest.TestCase):
+    def test_the_tag_comes_from_the_world_version(self):
+        self.assertEqual(derive_tag(MANIFEST), "v0.2.0")
+
+    def test_a_suffix_is_appended(self):
+        self.assertEqual(derive_tag(MANIFEST, "rc.1"), "v0.2.0-rc.1")
+        self.assertEqual(derive_tag(MANIFEST, "-rc.1"), "v0.2.0-rc.1", "a leading dash is tolerated")
+        self.assertEqual(derive_tag(MANIFEST, "  beta  "), "v0.2.0-beta")
+
+    def test_an_empty_suffix_means_no_suffix(self):
+        for suffix in ("", " ", "-"):
+            self.assertEqual(derive_tag(MANIFEST, suffix), "v0.2.0", repr(suffix))
+
+    def test_invalid_suffixes_are_refused(self):
+        for suffix in ("rc 1", "rc/1", ".x", "rc;rm -rf", "a$(b)", "!"):
+            with self.assertRaises(ReleaseError, msg=suffix):
+                derive_tag(MANIFEST, suffix)
+
+    def test_a_derived_tag_always_passes_release_validation(self):
+        text = CHANGELOG
+        for suffix in ("", "rc.1"):
+            prepare_release(derive_tag(MANIFEST, suffix), MANIFEST, text)
+
+    def test_a_malformed_manifest_version_is_refused(self):
+        with self.assertRaises(ReleaseError):
+            derive_tag({**MANIFEST, "world_version": "1.0"})
 
 
 class TestChangelog(unittest.TestCase):
@@ -99,6 +127,22 @@ class TestCommandLine(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(out.split(), ["version=0.2.0", "prerelease=true"])
         self.assertIn("Two things.", written)
+
+    def test_derive_tag_mode(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manifest = Path(folder, "m.json")
+            manifest.write_text(json.dumps(MANIFEST))
+            code, out, _ = self.run_main("--derive-tag", "--suffix", "rc.2", "--manifest", manifest)
+        self.assertEqual((code, out.strip()), (0, "tag=v0.2.0-rc.2"))
+
+    def test_derive_tag_rejects_a_bad_suffix_cleanly(self):
+        code, _, err = self.run_main("--derive-tag", "--suffix", "not valid")
+        self.assertEqual(code, 1)
+        self.assertIn("not a valid suffix", err)
+
+    def test_one_mode_is_required(self):
+        with self.assertRaises(SystemExit):
+            self.run_main()
 
     def test_failure_is_a_clean_error(self):
         code, _, err = self.run_main("--tag", "nonsense")
