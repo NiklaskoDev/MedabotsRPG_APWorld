@@ -33,7 +33,9 @@ that does is data that still has to be confirmed on a real ROM (see `docs/CALIBR
   `tools/ramdiff.py` and `tools/lua/dump_ram.lua` (finding flags and memory tables), `tools/dev.sh`.
 - **Documentation**: design, development and calibration guides, the game page and a setup guide.
 - **GitHub Actions**: CI on Archipelago 0.6.8 (Python 3.11 to 3.13) with a non-blocking check against Archipelago's
-  development branch, and a tag-triggered release workflow.
+  development branch; a manually run **Tag a release** workflow that derives the tag from `world_version`, checks the
+  changelog, lint and tests, pushes an annotated tag and publishes the release; and a **Release** workflow that builds
+  the `.apworld` and creates the GitHub release (also usable for an existing tag).
 
 ### Known limitations
 

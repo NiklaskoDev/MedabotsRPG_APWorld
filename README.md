@@ -58,8 +58,9 @@ tools/dev.sh build    # dist/medabots_rpg.apworld
 tools/dev.sh run tools/analyze_rom.py path/to/rom.gba   # inspect a ROM
 ```
 
-Releases are tagged `vX.Y.Z`; pushing such a tag runs the Release workflow, which builds the `.apworld` and publishes the
-GitHub release. See [Releasing](docs/DEVELOPMENT.md#releasing).
+Releases are tagged `vX.Y.Z`. To release, bump `world_version` and the changelog, then run **Actions > Tag a release**
+on GitHub: it verifies everything, pushes the tag and publishes the release with the built `.apworld`. See
+[Releasing](docs/DEVELOPMENT.md#releasing).
 
 ## Credits and licence
 

@@ -76,13 +76,29 @@ Versions follow [Semantic Versioning](https://semver.org/). The version lives in
 published as GitHub pre-releases.
 
 1. Move the `[Unreleased]` entries of `CHANGELOG.md` under a new `## [x.y.z] - YYYY-MM-DD` heading.
-2. Set `world_version` to `x.y.z`.
-3. Commit, then tag exactly `vx.y.z` (a release candidate may carry a suffix, `vx.y.z-rc.1`) and push the tag.
+2. Set `world_version` to `x.y.z`, commit and push the branch you want to release.
+3. On GitHub open **Actions > Tag a release > Run workflow**, pick that branch and start it. Use `dry_run` first if you
+   like: it runs every check and reports the tag without creating anything. Enter a `suffix` such as `rc.1` for a
+   release candidate (`vx.y.z-rc.1`).
 
-The `Release` workflow then checks that the tag equals the world version, runs the linter and the tests, builds
-`medabots_rpg.apworld` with Archipelago's packager, writes `SHA256SUMS.txt`, takes the release notes from the
-changelog and creates the GitHub release (marked as a pre-release while the major version is 0 or the tag has a
-suffix). Raise `minimum_ap_version` in `archipelago.json` only when you deliberately start using something newer.
+The **Tag a release** workflow (`.github/workflows/tag.yml`) then:
+
+1. derives the tag `vx.y.z` from `world_version` (it can never disagree with the world),
+2. stops unless that tag does not exist yet, `CHANGELOG.md` has a section for the version, and the linter and all tests
+   pass on that exact commit,
+3. pushes an annotated tag, and
+4. calls the **Release** workflow (`.github/workflows/release.yml`), which builds `medabots_rpg.apworld` with
+   Archipelago's packager, writes `SHA256SUMS.txt`, takes the release notes from the changelog and creates the GitHub
+   release (a pre-release while the major version is 0 or the tag has a suffix).
+
+`release.yml` also runs when a `vX.Y.Z[-suffix]` tag is pushed by hand, and can be started manually from the Actions tab
+to (re)publish the release of an existing tag.
+
+Why the tag workflow calls the release workflow instead of relying on the tag push: GitHub does not start workflows for
+events caused by the built-in `GITHUB_TOKEN`, so a tag pushed by a workflow would never trigger `release.yml`'s own tag
+trigger. Calling it directly works without a personal access token. If the repository has tag protection rules or
+rulesets, allow GitHub Actions to create `v*` tags. Raise `minimum_ap_version` in `archipelago.json` only when you
+deliberately start using something newer.
 
 ## Updating for a new Archipelago version
 

@@ -156,7 +156,9 @@ across Archipelago updates.
 
 ## 8. Release process
 
-Semantic versioning with a leading `v` tag (`v0.1.0`). Pushing a tag that equals `v<world_version>` runs
-`.github/workflows/release.yml`, which validates the tag with `tools/release_notes.py`, runs the linter and the tests,
-builds the `.apworld` with Archipelago's packager and creates a GitHub release with the matching changelog section (a
-pre-release while the major version is 0 or the tag has a suffix).
+Semantic versioning with a leading `v` tag (`v0.1.0`). The **Tag a release** workflow, started by hand from the Actions
+tab, derives the tag from `world_version`, verifies the changelog, lint and tests, pushes an annotated tag and calls the
+**Release** workflow, which builds the `.apworld` with Archipelago's packager and creates a GitHub release with the
+matching changelog section (a pre-release while the major version is 0 or the tag has a suffix). The release workflow is
+called directly because a tag pushed with the built-in token does not trigger other workflows. Details are in
+[DEVELOPMENT.md](DEVELOPMENT.md#releasing).
