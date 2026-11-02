@@ -47,11 +47,21 @@ class TestShippedData(unittest.TestCase):
             self.assertNotIn("  ", name)
             self.assertLessEqual(len(name), 80, name)
 
-    def test_unverified_data_is_not_marked_verified(self):
-        """The shipped data has never been checked against a ROM, so it must say so (it drives the gate)."""
+    def test_partly_calibrated_data_is_not_marked_verified(self):
+        """The memory map is calibrated, but the goal flag and some locations are not yet, so the whole world must
+        still say it is unverified (it drives the gate)."""
+        self.assertTrue(self.data.memory_map.verified)
         self.assertFalse(self.data.is_verified)
-        self.assertFalse(self.data.memory_map.verified)
-        self.assertTrue(all(not loc.verified for loc in self.data.locations))
+        self.assertIsNone(self.data.goal_detect)
+        self.assertTrue(any(loc.status == "candidate" for loc in self.data.locations))
+
+    def test_verified_locations_detect_and_neutralize(self):
+        """Every verified location says how it is seen and which vanilla reward the patch removes."""
+        verified = [loc for loc in self.data.locations if loc.verified]
+        self.assertTrue(verified)
+        for loc in verified:
+            self.assertIsNotNone(loc.detect, loc.name)
+            self.assertIsNotNone(loc.neutralize, loc.name)
 
     def test_story_areas_form_one_chain(self):
         parents = [a.parent for a in self.data.areas]
@@ -99,12 +109,43 @@ class TestValidation(unittest.TestCase):
     def test_verified_location_needs_detect(self):
         def mutate(raw):
             raw["locations"]["locations"][0]["status"] = "verified"
+            raw["locations"]["locations"][0].pop("detect")
         self.assertRejected(mutate, "verified but has no 'detect'")
+
+    def test_unknown_location_status(self):
+        def mutate(raw):
+            raw["locations"]["locations"][0]["status"] = "maybe"
+        self.assertRejected(mutate, "unknown status")
+
+    def test_unknown_detection_type(self):
+        def mutate(raw):
+            raw["locations"]["locations"][0]["detect"] = {"type": "vibes"}
+        self.assertRejected(mutate, "unknown detection type")
+
+    def test_event_detection_needs_a_valid_flag(self):
+        def mutate(raw):
+            raw["locations"]["locations"][0]["detect"] = {"type": "event", "flag": 5000}
+        self.assertRejected(mutate, "needs an event 'flag'")
+
+    def test_event_value_detection_needs_a_value(self):
+        def mutate(raw):
+            raw["locations"]["locations"][0]["detect"] = {"type": "event_value", "flag": 606}
+        self.assertRejected(mutate, "needs a 'value'")
 
     def test_verified_memory_map_must_be_complete(self):
         def mutate(raw):
-            raw["memory_map"]["verified"] = True
+            raw["memory_map"]["tables"]["money"] = None
         self.assertRejected(mutate, "marked verified but is missing")
+
+    def test_records_table_needs_a_record_size(self):
+        def mutate(raw):
+            del raw["memory_map"]["tables"]["medals_owned"]["record_size"]
+        self.assertRejected(mutate, "needs a record_size")
+
+    def test_strided_table_must_hold_whole_entries(self):
+        def mutate(raw):
+            raw["memory_map"]["tables"]["parts_owned"]["size"] = 961
+        self.assertRejected(mutate, "multiple of a stride")
 
     def test_unowned_map(self):
         def mutate(raw):
@@ -136,10 +177,20 @@ class TestValidation(unittest.TestCase):
             raw["items"]["version_exclusive"]["metabee"]["bots"].append("Knight Armor")
         self.assertRejected(mutate, "unknown bot")
 
-    def test_neutralize_must_keep_length(self):
+    def test_neutralize_needs_scripts_and_opcodes(self):
         def mutate(raw):
-            raw["locations"]["locations"][0]["neutralize"] = {"offset": "0x10", "expect": "3c0f", "replace": "00"}
-        self.assertRejected(mutate, "same length")
+            raw["locations"]["locations"][0]["neutralize"] = {"scripts": [], "opcodes": ["3C"]}
+        self.assertRejected(mutate, "at least one script and one opcode")
+
+    def test_neutralize_refuses_the_variable_length_opcode(self):
+        def mutate(raw):
+            raw["locations"]["locations"][0]["neutralize"] = {"scripts": [236], "opcodes": ["2F"]}
+        self.assertRejected(mutate, "fixed-length script opcodes")
+
+    def test_neutralize_needs_the_new_format(self):
+        def mutate(raw):
+            raw["locations"]["locations"][0]["neutralize"] = {"offset": "0x10", "expect": "3c0f", "replace": "0000"}
+        self.assertRejected(mutate, "invalid 'neutralize' entry")
 
     def test_invalid_json(self):
         class Broken(DictDataSource):

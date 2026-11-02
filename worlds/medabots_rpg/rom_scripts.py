@@ -79,3 +79,63 @@ def iter_instructions(rom: bytes, region: ScriptRegion, tables: GameTables) -> I
             raise ScriptError(f"Instruction at ROM offset 0x{position:X} runs past the end of the file")
         yield Instruction(position - region.start, rom[position], bytes(rom[position + 1:position + length]))
         position += length
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# The script bank: scripts by number
+# ---------------------------------------------------------------------------------------------------------------------
+BANK_HEADER_MAGIC = 0x4000
+"""The game reads its index tables relative to bank + 0x4000, so the first header word is always 0x4000."""
+
+
+@dataclass(frozen=True)
+class ScriptBank:
+    """The game's own index of event scripts: script ``n`` starts at ``starts[n]`` (a file offset).
+
+    Script numbers are the same in all four ROM versions, even where a script's position in the ROM differs.
+    """
+
+    base: int
+    starts: tuple[int, ...]
+
+    def span(self, number: int) -> tuple[int, int]:
+        """File offsets ``(start, end)`` of a script; it ends where the next script in the ROM begins."""
+        if not 0 <= number < len(self.starts):
+            raise ScriptError(f"There is no event script number {number}.")
+        start = self.starts[number]
+        later = [s for s in self.starts if s > start]
+        return start, min(later) if later else start
+
+
+def locate_script_bank(rom: bytes, info: RomInfo) -> ScriptBank:
+    """Read the script index the game uses (header ``0x4000, table B``; table A at +0x4000 holds 16-bit offsets,
+    table B one 16 KiB bank number per script; script n starts at ``base + A[n] - 0x4000 + (B[n] << 14)``)."""
+    signature = info.signatures[SCRIPT_SIGNATURE]
+    match = find_signature(rom, signature)
+    if match is None or signature.bank_offset is None:
+        raise ScriptError("The event-script bank was not found. This does not look like a supported Medabots ROM.")
+    base = match + signature.bank_offset
+    if base < 0 or base + 4 > len(rom) or int.from_bytes(rom[base:base + 2], "little") != BANK_HEADER_MAGIC:
+        raise ScriptError("The event-script bank header is not where it was expected.")
+    table_b = int.from_bytes(rom[base + 2:base + 4], "little")
+    count = (table_b - BANK_HEADER_MAGIC) // 2
+    if count <= 0 or base + table_b + count > len(rom):
+        raise ScriptError("The event-script bank header is malformed.")
+    starts = tuple(
+        base + int.from_bytes(rom[base + BANK_HEADER_MAGIC + 2 * n:base + BANK_HEADER_MAGIC + 2 * n + 2], "little")
+        - BANK_HEADER_MAGIC + (rom[base + table_b + n] << 14)
+        for n in range(count)
+    )
+    return ScriptBank(base, starts)
+
+
+def iter_script(rom: bytes, bank: ScriptBank, number: int, tables: GameTables) -> Iterator[tuple[int, Instruction]]:
+    """Walk one script, yielding ``(file offset, instruction)`` pairs."""
+    position, end = bank.span(number)
+    while position < end:
+        length = instruction_length(rom, position, tables)
+        if position + length > end:
+            raise ScriptError(f"Script {number} does not parse (instruction at ROM offset 0x{position:X})")
+        yield position, Instruction(position - bank.starts[number], rom[position],
+                                    bytes(rom[position + 1:position + length]))
+        position += length

@@ -119,6 +119,15 @@ class TestValidateRom(ClientTestCase):
             self.memory.rom[:] = patched_rom(version.header_id)
             self.assertTrue(await self.client.validate_rom(make_context()), version.id)
 
+    async def test_the_medal_table_is_read_from_the_rom_version_in_use(self):
+        for version in DATA.rom.versions:
+            rom = bytearray(patched_rom(version.header_id))
+            rom[version.medal_table_offset:version.medal_table_offset + 2] = bytes([0xAB, len(version.id)])
+            self.memory.rom[:] = rom
+            self.assertTrue(await self.client.validate_rom(make_context()))
+            self.assertEqual(len(self.client.medal_table), 30 * 16)
+            self.assertEqual(self.client.medal_table[:2], bytes([0xAB, len(version.id)]), version.id)
+
     async def test_an_unpatched_rom_is_refused_with_instructions(self):
         self.memory.rom[:] = build_rom()
         with self.assertLogs("Client", "INFO") as logs:

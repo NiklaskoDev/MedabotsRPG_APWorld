@@ -15,7 +15,7 @@ from NetUtils import ClientStatus
 from Utils import async_start
 from worlds._bizhawk.client import BizHawkClient
 
-from .constants import GAME_NAME, GBA_ROM_DOMAIN
+from .constants import GAME_NAME, GBA_ROM_DOMAIN, MEDAL_TABLE_ENTRY_SIZE
 from .data_loader import get_world_data
 from .effects import (
     ClientState,
@@ -53,6 +53,7 @@ class MedabotsRPGClient(BizHawkClient):
 
     def _reset(self) -> None:
         self.identity: ApIdentity | None = None
+        self.medal_table: bytes | None = None
         self.state = ClientState()
         self.counter_loaded = False
         self.blocked: str | None = None
@@ -80,7 +81,7 @@ class MedabotsRPGClient(BizHawkClient):
             return False
 
         try:
-            identify_header(header, self.data)
+            version = identify_header(header, self.data)
         except RomError:
             return False  # some other game; stay quiet so other clients can claim it
 
@@ -90,8 +91,16 @@ class MedabotsRPGClient(BizHawkClient):
                                          "Archipelago Launcher to create the patched ROM, then load that one.")
             return False
 
+        try:
+            (medal_table,) = await bizhawk.read(ctx.bizhawk_ctx, [
+                (version.medal_table_offset, len(self.data.tables.medals) * MEDAL_TABLE_ENTRY_SIZE, GBA_ROM_DOMAIN),
+            ])
+        except bizhawk.RequestFailedError:
+            return False
+
         self._reset()
         self.identity = identity
+        self.medal_table = medal_table
         ctx.game = self.game
         ctx.items_handling = 0b111  # receive everything, including items from this slot and the starting inventory
         ctx.want_slot_data = True
@@ -200,7 +209,7 @@ class MedabotsRPGClient(BizHawkClient):
             own_name=ctx.player_names.get(ctx.slot, ""),
             strength=slot_data.get("trap_strength", "normal"),
             message_mode=slot_data.get("receive_item_messages", "all"),
-            now=now, repair=repair,
+            now=now, repair=repair, medal_table=self.medal_table,
         )
         if plan.writes:
             domain = self.data.memory_map.domain

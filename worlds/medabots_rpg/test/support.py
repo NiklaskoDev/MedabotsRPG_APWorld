@@ -1,7 +1,9 @@
-"""Test helpers: a synthetic verified data set, a synthetic ROM and a fake BizHawk memory.
+"""Test helpers: synthetic verified data sets, a synthetic ROM and a fake BizHawk memory.
 
-The shipped data is (honestly) unverified, so everything that needs a "verified" world, such as delivering items or
-patching, is tested against data built here. The synthetic memory map is an invented but self-consistent layout.
+The shipped data is not fully verified, so everything that needs a "verified" world, such as delivering items or
+patching, is tested against data built here. ``verified_data`` uses an invented, simple layout (bitfields only);
+``shaped_data`` uses the shapes calibration found in the real game (nibble event flags, two-byte part counts and the
+medal case of 64-byte records), relocated into the fake RAM window.
 """
 from __future__ import annotations
 
@@ -14,6 +16,9 @@ from ..data_loader import DATA_FILES, DictDataSource, PackageDataSource, WorldDa
 SYSTEM_BUS = "System Bus"
 RAM_BASE = 0x02000000
 SCRIPT_START = 0x100000
+SCRIPT_BANK = SCRIPT_START - 0x8000
+TEST_SCRIPT = 1
+"""The event script number that ``build_rom``'s ``scripts`` become."""
 ROM_SIZE = 0x800000
 SCRIPT_REGION_LENGTH = 0x18000
 
@@ -31,6 +36,20 @@ FORCE_ENCOUNTER = RAM_BASE + 0x412
 FLAG_BIT_SQUIDGUTS = 5
 FLAG_BIT_MEDAL_ROOM = 9
 FLAG_BIT_STORY_COMPLETE = 100
+
+# Layout with the real shapes (see shaped_data)
+SHAPED_FLAGS = RAM_BASE + 0x1000
+SHAPED_PARTS = RAM_BASE + 0x1800
+SHAPED_MEDALS = RAM_BASE + 0x1C00
+SHAPED_MONEY = RAM_BASE + 0x2400
+SHAPED_SAFE = RAM_BASE + 0x2410
+SHAPED_IN_BATTLE = RAM_BASE + 0x2411
+STORY_COMPLETE_EVENT = 2070
+
+
+def medal_table() -> bytes:
+    """An invented ROM medal table (30 entries of 16 bytes) shaped like the game's."""
+    return b"".join(bytes([i, i, 1, 30, 60, 0xFF, 0xFF, 7, 8, 0, 8, 0, 0, 0, 6, 6]) for i in range(30))
 
 
 def raw_data() -> dict[str, Any]:
@@ -66,7 +85,8 @@ def verified_data(parts_layout: str = "model_major", with_optional: bool = True)
     )
     raw["regions"]["goal_detect"] = {"type": "flag", "table": "game_flags", "bit": FLAG_BIT_STORY_COMPLETE}
     for entry in raw["locations"]["locations"]:
-        entry["status"] = "verified"
+        if entry["status"] != "absent":
+            entry["status"] = "verified"
         entry["detect"] = {"type": "flag", "table": "game_flags", "bit": entry["id"] % 50 + 20}
     by_id = {entry["id"]: entry for entry in raw["locations"]["locations"]}
     by_id[20003]["detect"]["bit"] = FLAG_BIT_SQUIDGUTS
@@ -74,11 +94,28 @@ def verified_data(parts_layout: str = "model_major", with_optional: bool = True)
     return load_world_data(DictDataSource(raw))
 
 
+def shaped_data() -> WorldData:
+    """The shipped memory map shapes moved into the fake RAM window, with every existing location verified."""
+    raw = copy.deepcopy(raw_data())
+    tables = raw["memory_map"]["tables"]
+    for name, address in (("game_flags", SHAPED_FLAGS), ("parts_owned", SHAPED_PARTS),
+                          ("medals_owned", SHAPED_MEDALS), ("money", SHAPED_MONEY)):
+        tables[name]["address"] = hex(address)
+    raw["memory_map"]["state"]["safe_to_deliver"]["address"] = hex(SHAPED_SAFE)
+    raw["memory_map"]["state"]["in_battle"]["address"] = hex(SHAPED_IN_BATTLE)
+    raw["regions"]["goal_detect"] = {"type": "event", "flag": STORY_COMPLETE_EVENT}
+    for entry in raw["locations"]["locations"]:
+        if entry["status"] != "absent":
+            entry["status"] = "verified"
+            entry.setdefault("detect", {"type": "event", "flag": entry["id"] - 18000})
+    return load_world_data(DictDataSource(raw))
+
+
 class FakeMemory:
     """A tiny GBA memory: a RAM window at 0x02000000 plus a ROM image, addressed like BizHawk's domains."""
 
     def __init__(self, rom: bytes = b""):
-        self.ram = bytearray(0x1000)
+        self.ram = bytearray(0x2800)
         self.rom = bytearray(rom)
         self.writes: list[tuple[int, bytes]] = []
         self.fail_next_guard = False
@@ -119,19 +156,27 @@ class FakeMemory:
 
 
 def build_rom(header_id: str = "MEDABOTSMTBVA8BEE9", scripts: bytes = b"", size: int = ROM_SIZE) -> bytes:
-    """A blank (0xFF) ROM image with a valid header and an event-script region.
+    """A blank (0x00, like the real ROMs' free space) ROM image with a valid header and an event-script bank.
 
-    The region starts with the documented signature, which is itself a 28-byte multi-way-jump instruction, followed
-    by ``scripts`` and then one-byte no-ops up to the documented region length, so the whole region parses.
+    The script region starts with the documented signature, which is itself a 28-byte multi-way-jump instruction
+    (script 0), followed by ``scripts`` (script ``TEST_SCRIPT``), an end instruction (script 2) and then one-byte
+    no-ops up to the documented region length, so the whole region parses. The bank header and index tables sit
+    0x8000 before the region, as in the real ROMs.
     """
-    rom = bytearray(b"\xFF" * size)
+    rom = bytearray(size)  # 0x00 is also the one-byte no-op of the script language
     rom[0xA0:0xA0 + len(header_id)] = header_id.encode("ascii")
-    region_end = min(size, SCRIPT_START + SCRIPT_REGION_LENGTH)
-    rom[SCRIPT_START:region_end] = bytes(region_end - SCRIPT_START)  # 0x00 = one-byte no-op
     signature = bytes.fromhex("2F1B031134008601010A")
     first_instruction = signature + bytes(28 - len(signature))
-    content = (first_instruction + scripts)[:size - SCRIPT_START]
+    content = (first_instruction + scripts + b"\x06")[:size - SCRIPT_START]
     rom[SCRIPT_START:SCRIPT_START + len(content)] = content
+    starts = [SCRIPT_START, SCRIPT_START + len(first_instruction), SCRIPT_START + len(content) - 1]
+    table_b = 0x4000 + 2 * len(starts)
+    rom[SCRIPT_BANK:SCRIPT_BANK + 4] = (0x4000).to_bytes(2, "little") + table_b.to_bytes(2, "little")
+    for number, start in enumerate(starts):
+        bank, offset = divmod(start - SCRIPT_BANK, 0x4000)
+        entry = SCRIPT_BANK + 0x4000 + 2 * number
+        rom[entry:entry + 2] = (offset + 0x4000).to_bytes(2, "little")
+        rom[SCRIPT_BANK + table_b + number] = bank
     assert len(rom) == size
     return bytes(rom)
 

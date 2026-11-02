@@ -7,6 +7,33 @@ in-game layer has not yet been verified against a real ROM.
 
 ## [Unreleased]
 
+Calibration against Medabots: Metabee Version (USA) in BizHawk; see `docs/CALIBRATION_NOTES.md`.
+
+### Added
+
+- **Verified memory map**: event flags, medapart counts, the medal case, money, the safe-to-deliver and in-battle
+  states. Medals are delivered as complete medal records built like the game builds them, from the medal table in the
+  player's ROM.
+- **Verified locations**: Nae's medal room, the Odoro Marsh broken parts room, the right locker trade on Medabot
+  Island, a Rubberobo medal room chest and all four Fort Fiyun chests. Locations can be detected by an event's done
+  flag or its value, and new location status `absent` marks spots that turned out not to exist.
+- `tools/analyze_rom.py` lists every reward script by number, with what it gives and the flags it sets.
+
+### Changed
+
+- The identity block and every blank-memory check use `0x00`, how all four ROMs pad their free space. Before, every
+  real ROM would have been refused.
+- Script rewrites name the event script and the reward opcodes (`{"scripts": [...], "opcodes": [...]}`) and blank
+  those instructions with the game's no-op, instead of a byte offset that differs between Metabee and Rokusho. The
+  patch format is now 2.
+- Items are never delivered during a battle.
+- *Rubberobo Base - Medal Room Medal* is now *Rubberobo Base - Medal Room Chest* (the room holds money).
+
+### Removed
+
+- The two lockers and medal room that hold no reward and all shop purchases (buying records nothing) are `absent`;
+  their IDs stay reserved. The Shop Purchases option currently adds nothing.
+
 ## [0.1.0] - 2026-11-02
 
 First pre-release. Everything that does not depend on the game's memory layout is implemented and tested; everything

@@ -29,7 +29,10 @@ the multiworld. The story, its order and its cutscenes are left exactly as they 
 * **Traps**, if you enable them (see below).
 
 **Locations** (each category can be switched on or off in the options): medal pickups, chests and ground pickups,
-gifts from characters, boss Robattles, mini-game prizes, shop purchases and trainer Robattles.
+gifts from characters, boss Robattles, mini-game prizes, shop purchases and trainer Robattles. Shop purchases cannot
+be checks yet (the game does not record them), so that option currently adds nothing.
+
+**Medals** you receive arrive in your medal case under their own name, at the level a newly found medal would have.
 
 ## What do the logic options do?
 

@@ -5,10 +5,10 @@ import unittest
 from rule_builder.rules import And, Has, HasGroup, Or, True_
 
 from ..constants import GROUP_PARTS
-from ..data_loader import DataError, get_world_data
+from ..data_loader import DataError, DictDataSource, get_world_data, load_world_data
 from ..items import allocate, build_item_pool, eligible_parts_and_medals, supported_traps
 from ..rules import compile_rule, part_gate_thresholds
-from .support import make_options, verified_data
+from .support import make_options, raw_data, verified_data
 
 DATA = get_world_data()
 KINDS = {item.name: item.kind for item in DATA.items}
@@ -104,9 +104,9 @@ class TestPool(unittest.TestCase):
 
     def test_trap_weights_choose_the_traps(self):
         pool = self.build(50, part_weight=0, medal_weight=0, money_weight=100, trap_percentage=100,
-                          trap_weights={"Ambush Trap": 1, "Money Drain Trap": 0, "Rusty Armor Trap": 0,
+                          trap_weights={"Ambush Trap": 0, "Money Drain Trap": 1, "Rusty Armor Trap": 0,
                                         "Medal Nap Trap": 0})
-        self.assertEqual(set(pool.item_names), {"Ambush Trap"})
+        self.assertEqual(set(pool.item_names), {"Money Drain Trap"})
 
     def test_no_trap_weights_means_no_traps(self):
         pool = self.build(50, money_weight=100, trap_percentage=100,
@@ -121,8 +121,14 @@ class TestPool(unittest.TestCase):
                                                   trap_percentage=100), 30, 0, random.Random(3))
         self.assertEqual(set(pool.item_names), {"Money Drain Trap"})
 
-    def test_an_unverified_build_keeps_all_traps_so_it_can_be_tested(self):
-        self.assertEqual(len(supported_traps(DATA)), 4)
+    def test_an_unverified_memory_map_keeps_all_traps_so_it_can_be_tested(self):
+        raw = raw_data()
+        raw["memory_map"]["verified"] = False
+        self.assertEqual(len(supported_traps(load_world_data(DictDataSource(raw)))), 4)
+
+    def test_the_calibrated_memory_map_supports_money_drain_only(self):
+        """The trap-only addresses are not known yet, so only Money Drain can be applied."""
+        self.assertEqual([t.name for t in supported_traps(DATA)], ["Money Drain Trap"])
 
     def test_a_request_for_only_unsupported_traps_is_reported(self):
         data = verified_data(with_optional=False)

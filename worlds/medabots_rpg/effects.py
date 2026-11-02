@@ -7,6 +7,10 @@ fails, nothing is written and the same step is simply planned again, which is wh
 
 Medaparts and medals are *state based*: they are ensured to be owned, so repeating a step or loading an older save is
 harmless. Money and traps are *counted*: a persistent index records how many received items were already processed.
+
+The game keeps medals as full records (a medal case), not as bits. A received medal is written as the exact record the
+game's own "give medal" routine would build, from the medal's 16-byte entry in the ROM's medal table (which the client
+reads once and passes in as ``medal_table``).
 """
 from __future__ import annotations
 
@@ -14,7 +18,16 @@ import copy
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
-from .constants import KIND_CONSUMABLE, KIND_MEDAL, KIND_PART, KIND_TRAP, PART_SLOTS
+from .constants import (
+    EVENT_FLAG_BITS,
+    EVENT_VALUE_SHIFTS,
+    KIND_CONSUMABLE,
+    KIND_MEDAL,
+    KIND_PART,
+    KIND_TRAP,
+    MEDAL_TABLE_ENTRY_SIZE,
+    PART_SLOTS,
+)
 from .data_loader import ItemDef, MemoryMap, TableRef, WorldData
 
 _NUMERIC_KINDS = ("u8", "u16", "u32")
@@ -55,6 +68,25 @@ class Snapshot:
         raw = self.raw.get(f"tables.{table}")
         return raw is not None and (bit >> 3) < len(raw) and bool(raw[bit >> 3] & (1 << (bit & 7)))
 
+    def event_value(self, flag: int) -> int | None:
+        """The 3-bit value the game stores next to event ``flag`` (``None`` when the flag table is unknown)."""
+        raw = self.raw.get("tables.game_flags")
+        if raw is None or (flag >> 1) >= len(raw):
+            return None
+        return (raw[flag >> 1] >> EVENT_VALUE_SHIFTS[flag & 1]) & 7
+
+    def detected(self, detect: Mapping | None) -> bool:
+        """Whether a ``detect`` entry of locations.json / regions.json is satisfied."""
+        kind = detect.get("type") if detect else None
+        if kind == "flag":
+            return self.flag_is_set(detect["table"], detect["bit"])
+        if kind == "event":
+            return self.flag_is_set("game_flags", event_flag_bit(detect["flag"]))
+        if kind == "event_value":
+            value = self.event_value(detect["flag"])
+            return value is not None and value >= detect["value"]
+        return False
+
     def state_is_set(self, name: str) -> bool | None:
         """Whether a state flag is on, or ``None`` when its address is not known."""
         ref, raw = self.memory_map.state.get(name), self.raw.get(f"state.{name}")
@@ -63,13 +95,19 @@ class Snapshot:
         return raw[0] in ref.values if ref.values else bool(raw[0])
 
 
+def event_flag_bit(flag: int) -> int:
+    """Bit index (from the start of the game_flags table) of event ``flag``'s done flag: two events share a byte."""
+    return (flag >> 1) * 8 + EVENT_FLAG_BITS[flag & 1]
+
+
 class _Workspace:
     """A mutable copy of a snapshot used to compute writes."""
 
-    def __init__(self, snapshot: Snapshot):
+    def __init__(self, snapshot: Snapshot, medal_table: bytes | None = None):
         self.memory_map = snapshot.memory_map
         self.original = snapshot.raw
         self.buffers = {path: bytearray(raw) for path, raw in snapshot.raw.items()}
+        self.medal_table = medal_table
 
     def ref(self, path: str) -> TableRef | None:
         return self.memory_map.resolve(path) if path in self.buffers else None
@@ -104,9 +142,30 @@ class _Workspace:
                 return False
             buffer[index >> 3] |= 1 << (index & 7)
         else:
-            if index >= len(buffer):
+            position = index * ref.stride
+            if position >= len(buffer):
                 return False
-            buffer[index] = max(buffer[index], 1)
+            buffer[position] = max(buffer[position], 1)
+        return True
+
+    def ensure_medal_record(self, path: str, medal_id: int, name: str) -> bool:
+        """Make sure the medal case holds ``medal_id``, adding a record built like the game does when it does not.
+
+        ``False`` if the table, the ROM medal table or a free slot is missing.
+        """
+        ref, buffer = self.ref(path), self.buffers.get(path)
+        if ref is None or buffer is None or self.medal_table is None:
+            return False
+        size = ref.record_size
+        records = [buffer[i:i + size] for i in range(0, len(buffer), size)]
+        if any(rec[0] & 0x80 and rec[1] == medal_id for rec in records):
+            return True
+        free = next((i for i, rec in enumerate(records) if not rec[0] & 0x80), None)
+        entry = self.medal_table[medal_id * MEDAL_TABLE_ENTRY_SIZE:(medal_id + 1) * MEDAL_TABLE_ENTRY_SIZE]
+        if free is None or len(entry) != MEDAL_TABLE_ENTRY_SIZE:
+            return False
+        levels = [rec[5] if rec[0] & 0x80 else 0 for rec in records]
+        buffer[free * size:(free + 1) * size] = new_medal_record(medal_id, entry, levels, records[free][0], name, size)
         return True
 
     def number(self, path: str) -> int | None:
@@ -117,6 +176,28 @@ class _Workspace:
         ref, buffer = self.memory_map.resolve(path), self.buffers[path]
         value = max(0, min(value, ref.maximum if ref.maximum is not None else (1 << (8 * len(buffer))) - 1))
         buffer[:] = value.to_bytes(len(buffer), "little")
+
+
+def new_medal_record(medal_id: int, entry: bytes, levels: Sequence[int], slot_byte: int, name: str, size: int) -> bytes:
+    """The record the game's own "give medal" routine (0x08041D70 in Metabee USA) writes for a new medal.
+
+    ``entry`` is the medal's 16-byte line of the ROM medal table, ``levels`` the levels in every slot of the medal case
+    (0 for empty slots) and ``slot_byte`` the first byte of the free slot, whose low bits the game keeps. The name is
+    normally typed by the player on a naming screen; the medal's own name is the game's default there.
+    """
+    ranked = sorted(levels, reverse=True) + [0] * 4
+    level = (ranked[0] - ranked[3]) // 2 + ranked[3]  # half way between the best and the fourth best medal
+    record = bytearray(size)
+    record[0] = 0x80 | (slot_byte & 0x7F)
+    record[1] = medal_id
+    record[2:4] = ((level + 1) * 100).to_bytes(2, "little")
+    record[4], record[5], record[6], record[7] = entry[1], level, entry[2], entry[7]
+    record[8] = next((rank for rank in (4, 3, 2, 1) if entry[2 + rank] and level >= entry[2 + rank]), 0)
+    letters = bytes(ord(c) - 0x40 for c in name.upper() if "A" <= c <= "Z")[:10]
+    record[0x0A:0x18] = letters.ljust(14, b"\xFE")
+    for i in range(8):
+        record[0x20 + i] = min(100, (level // 10 + 1) * entry[8 + i])
+    return bytes(record)
 
 
 def part_index(ref: TableRef, data: WorldData, model: int, slot: int) -> int:
@@ -131,18 +212,12 @@ def part_index(ref: TableRef, data: WorldData, model: int, slot: int) -> int:
 def detect_checked_locations(data: WorldData, snapshot: Snapshot, wanted: Iterable[int]) -> set[int]:
     """IDs among ``wanted`` whose check is visible in the snapshot."""
     wanted = set(wanted)
-    found = set()
-    for location in data.locations:
-        detect = location.detect
-        if location.id in wanted and detect and detect.get("type") == "flag":
-            if snapshot.flag_is_set(detect["table"], detect["bit"]):
-                found.add(location.id)
-    return found
+    return {location.id for location in data.locations
+            if location.id in wanted and snapshot.detected(location.detect)}
 
 
 def story_complete(data: WorldData, snapshot: Snapshot) -> bool:
-    detect = data.goal_detect
-    return bool(detect and detect.get("type") == "flag" and snapshot.flag_is_set(detect["table"], detect["bit"]))
+    return snapshot.detected(data.goal_detect)
 
 
 def collection_goal_reached(data: WorldData, received: Sequence[str], goal: str, medals: int, parts: int) -> bool:
@@ -195,8 +270,11 @@ def _grant(data: WorldData, ws: _Workspace, item: ItemDef) -> bool:
         ref = data.memory_map.tables.get("parts_owned")
         return ref is not None and ws.set_ownership(
             "tables.parts_owned", part_index(ref, data, item.data["model"], item.data["slot"]))
-    return data.memory_map.tables.get("medals_owned") is not None and ws.set_ownership(
-        "tables.medals_owned", item.data["medal_id"])
+    ref = data.memory_map.tables.get("medals_owned")
+    if ref is not None and ref.kind == "records":
+        medal_id = item.data["medal_id"]
+        return ws.ensure_medal_record("tables.medals_owned", medal_id, data.tables.medals[medal_id])
+    return ref is not None and ws.set_ownership("tables.medals_owned", item.data["medal_id"])
 
 
 def _add_money(ws: _Workspace, amount: int) -> bool:
@@ -265,18 +343,21 @@ def plan_step(
     message_mode: str,
     now: float,
     repair: bool,
+    medal_table: bytes | None = None,
 ) -> StepResult:
     """Decide what to write for one client tick.
 
     ``repair`` additionally re-asserts ownership of every received part and medal (silently), which fixes the game
-    after an older save was loaded. Nothing is delivered unless the game is known to be in a safe state.
+    after an older save was loaded. Nothing is delivered unless the game is known to be in a safe state and not known
+    to be in a battle. ``medal_table`` is the ROM's medal table, needed when the medal case holds records.
     """
-    ws, new_state = _Workspace(snapshot), copy.deepcopy(state)
+    ws, new_state = _Workspace(snapshot, medal_table), copy.deepcopy(state)
     announcements: list[str] = []
 
-    _update_traps(ws, new_state, snapshot.state_is_set("in_battle"), now)
+    in_battle = snapshot.state_is_set("in_battle")
+    _update_traps(ws, new_state, in_battle, now)
 
-    if snapshot.state_is_set("safe_to_deliver"):
+    if snapshot.state_is_set("safe_to_deliver") and not in_battle:
         if repair:
             for entry in received:
                 item = data.item_by_name.get(entry.name)

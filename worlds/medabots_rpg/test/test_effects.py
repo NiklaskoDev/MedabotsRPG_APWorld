@@ -10,6 +10,8 @@ from ..effects import (
     Snapshot,
     collection_goal_reached,
     detect_checked_locations,
+    event_flag_bit,
+    new_medal_record,
     plan_step,
     readable_tables,
     story_complete,
@@ -27,7 +29,16 @@ from .support import (
     MONEY,
     PARTS,
     SAFE,
+    SHAPED_FLAGS,
+    SHAPED_IN_BATTLE,
+    SHAPED_MEDALS,
+    SHAPED_MONEY,
+    SHAPED_PARTS,
+    SHAPED_SAFE,
+    STORY_COMPLETE_EVENT,
     FakeMemory,
+    medal_table,
+    shaped_data,
     verified_data,
 )
 
@@ -42,8 +53,9 @@ def snapshot_of(data: WorldData, memory: FakeMemory) -> Snapshot:
 class Harness:
     """Runs plan_step against a fake memory exactly like the client does: plan, guard-check, write, adopt state."""
 
-    def __init__(self, data: WorldData | None = None):
+    def __init__(self, data: WorldData | None = None, medal_table: bytes | None = None):
         self.data = data or verified_data()
+        self.medal_table = medal_table
         self.memory = FakeMemory()
         self.state = ClientState()
         self.clock = 1000.0
@@ -52,7 +64,8 @@ class Harness:
     def step(self, received=(), *, repair=False, strength="normal", mode="all", advance=0.0):
         self.clock += advance
         plan = plan_step(self.data, snapshot_of(self.data, self.memory), list(received), self.state, own_name=SELF,
-                         strength=strength, message_mode=mode, now=self.clock, repair=repair)
+                         strength=strength, message_mode=mode, now=self.clock, repair=repair,
+                         medal_table=self.medal_table)
         for (address, expected), (_, new) in zip(plan.guards, plan.writes, strict=True):
             assert self.memory.read(address, len(expected)) == expected, "guard would fail"
             self.memory.write(address, new)
@@ -294,3 +307,103 @@ class TestTraps(unittest.TestCase):
         self.assertEqual(harness.state.applied_index, 1)
         self.assertEqual(harness.state.traps, [])
         self.assertEqual(harness.memory.writes, [])
+
+
+class TestCalibratedShapes(unittest.TestCase):
+    """The table shapes calibration found in the real game: nibble event flags, two-byte part counts and the medal
+    case of 64-byte records."""
+
+    data = shaped_data()
+
+    def harness(self):
+        return Harness(self.data, medal_table=medal_table())
+
+    def snapshot(self, memory):
+        return snapshot_of(self.data, memory)
+
+    def set_event(self, memory, flag, value=0, done=True):
+        nibble = (8 if done else 0) | value
+        address = SHAPED_FLAGS + (flag >> 1)
+        shift = 4 if flag % 2 == 0 else 0
+        memory.set_byte(address, (memory.byte(address) & ~(0xF << shift)) | (nibble << shift))
+
+    def test_event_flags_share_a_byte(self):
+        self.assertEqual(event_flag_bit(148), 74 * 8 + 7)
+        self.assertEqual(event_flag_bit(1609), 804 * 8 + 3)
+
+    def test_locations_are_found_by_their_event_flag(self):
+        memory = FakeMemory()
+        wanted = {loc.id for loc in self.data.locations}
+        self.set_event(memory, 1610)
+        self.assertEqual(detect_checked_locations(self.data, self.snapshot(memory), wanted), {20011})
+        self.set_event(memory, 1611)  # the neighbour in the same byte
+        self.assertEqual(detect_checked_locations(self.data, self.snapshot(memory), wanted), {20011, 20012})
+
+    def test_event_value_detection(self):
+        memory = FakeMemory()
+        wanted = {20006}
+        self.set_event(memory, 606, value=0, done=True)
+        self.assertEqual(detect_checked_locations(self.data, self.snapshot(memory), wanted), set(), "done alone")
+        self.set_event(memory, 606, value=1, done=False)
+        self.assertEqual(detect_checked_locations(self.data, self.snapshot(memory), wanted), {20006})
+
+    def test_story_complete_event(self):
+        memory = FakeMemory()
+        self.assertFalse(story_complete(self.data, self.snapshot(memory)))
+        self.set_event(memory, STORY_COMPLETE_EVENT)
+        self.assertTrue(story_complete(self.data, self.snapshot(memory)))
+
+    def test_a_part_raises_its_count_from_zero_only(self):
+        harness = self.harness()
+        name = part_item_name(self.data.tables, 39, 3)
+        harness.step(harness.receive(name))
+        address = SHAPED_PARTS + 3 * 240 + 39 * 2
+        self.assertEqual((harness.memory.byte(address), harness.memory.byte(address + 1)), (1, 0))
+        harness.memory.set_byte(address, 5)
+        harness.step(harness.receive(name), repair=True)
+        self.assertEqual(harness.memory.byte(address), 5, "owning more is left alone")
+
+    def test_a_medal_becomes_a_record_like_the_game_makes(self):
+        harness = self.harness()
+        harness.memory.set_byte(SHAPED_MEDALS + 64, 0x01)  # the game keeps a slot number in the low bits
+        harness.memory.write(SHAPED_MEDALS, new_medal_record(2, medal_table()[32:48], [0] * 30, 0, "Tortoise", 64))
+        harness.step(harness.receive("Medal: Bat"))
+        record = harness.memory.read(SHAPED_MEDALS + 64, 64)
+        self.assertEqual(record[:10], bytes([0x81, 15, 100, 0, 15, 0, 1, 7, 0, 0]))
+        self.assertEqual(record[0x0A:0x18], bytes([2, 1, 20]) + bytes([0xFE]) * 11, "BAT, padded")
+        self.assertEqual(record[0x20:0x28], bytes([8, 0, 8, 0, 0, 0, 6, 6]))
+
+    def test_a_medal_is_not_added_twice(self):
+        harness = self.harness()
+        harness.step(harness.receive("Medal: Bat"))
+        harness.step(harness.receive("Medal: Bat"), repair=True)
+        used = [harness.memory.byte(SHAPED_MEDALS + 64 * i) & 0x80 for i in range(30)]
+        self.assertEqual(sum(1 for flag in used if flag), 1)
+
+    def test_new_medals_start_between_the_best_and_the_fourth_best(self):
+        record = new_medal_record(5, medal_table()[80:96], [40, 30, 20, 10] + [0] * 26, 0, "Spider", 64)
+        self.assertEqual(record[5], 25)
+        self.assertEqual(int.from_bytes(record[2:4], "little"), 2600)
+        self.assertEqual(record[8], 0, "level 25 is below the first threshold of 30")
+        self.assertEqual(record[0x20], 24, "base 8 times (25 // 10 + 1)")
+
+    def test_medals_wait_without_the_rom_medal_table(self):
+        harness = Harness(self.data)
+        harness.step(harness.receive("Medal: Bat"))
+        self.assertEqual(harness.state.applied_index, 0)
+        self.assertEqual(harness.memory.writes, [])
+
+    def test_nothing_is_delivered_during_a_battle(self):
+        harness = self.harness()
+        harness.memory.set_byte(SHAPED_IN_BATTLE, 1)
+        harness.step(harness.receive("Money Pouch (Small)"))
+        self.assertEqual((harness.memory.u32(SHAPED_MONEY), harness.state.applied_index), (0, 0))
+        harness.memory.set_byte(SHAPED_IN_BATTLE, 0)
+        harness.step(harness.receive("Money Pouch (Small)"))
+        self.assertEqual(harness.memory.u32(SHAPED_MONEY), 200)
+
+    def test_nothing_is_delivered_while_a_script_runs(self):
+        harness = self.harness()
+        harness.memory.set_byte(SHAPED_SAFE, 1)
+        harness.step(harness.receive("Money Pouch (Small)"))
+        self.assertEqual(harness.state.applied_index, 0)

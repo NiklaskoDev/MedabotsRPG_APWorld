@@ -9,8 +9,14 @@ You are done when:
 
 * `data/memory_map.json` has `"verified": true` and every required entry filled in,
 * every location in `data/locations.json` has `"status": "verified"` with a `detect` entry (and a `neutralize` entry
-  where the vanilla reward must be removed),
+  where the vanilla reward must be removed), or `"status": "absent"` when it turned out not to exist,
+* `data/regions.json` has a `goal_detect` entry,
 * `tools/dev.sh test` passes, and a two-player test multiworld plays through (step 5).
+
+**Where things stand** (calibration of 2026-11-02, see [CALIBRATION_NOTES.md](CALIBRATION_NOTES.md) for every
+finding and how it was confirmed): the memory map is verified; 8 locations are verified, 11 are absent and 3 are still
+candidates (Squidguts, the arcade prize, the Ninja Park prize); `goal_detect` and the trap-only addresses are not known
+yet, and the start-menu state was not observed. The world therefore still reports itself as unverified.
 
 ## Requirements
 
@@ -26,14 +32,18 @@ Keep notes. For every memory address or flag you confirm, write down the ROM ver
 tools/dev.sh run tools/analyze_rom.py path/to/rom.gba --json report.json
 ```
 
-This tells you which version the ROM is, where the documented tables are, every battle, and every *give medal*
-instruction in the event scripts (with its script offset and the medal it gives). Check three things:
+This tells you which version the ROM is, where the documented tables are, every battle, every *give medal*
+instruction in the event scripts (with its script offset and the medal it gives), and every **reward script by
+number**: each event script that gives an item, part, money, a medal or a Medabot, with the event flags it sets. Script
+`n` is also map object `n` and owns event flag `n`, and most reward scripts set their own flag ("sets own flag"), so
+this list is where locations come from. Check three things:
 
-1. **All signatures are found** (`event_scripts` at least). If one says `NOT FOUND`, the ROM differs from the documented
-   one; note which.
+1. **All signatures are found** (`event_scripts` at least) and the script bank is found. If one says `NOT FOUND`, the
+   ROM differs from the documented one; note which.
 2. **The identity block is blank.** `memory_map.json` reserves `ap_block` (default `0x7FF000`, 256 bytes) in the ROM for
-   the seed identity. The report says "blank, usable" or lists other blank runs. Pick one, update `ap_block.rom_offset`,
-   and make sure it is blank in all four ROM versions.
+   the seed identity. Blank means `0x00`: all four ROMs pad their unused space with zeros. The report says "blank,
+   usable" or lists other blank runs. Pick one, update `ap_block.rom_offset`, and make sure it is blank in all four ROM
+   versions.
 3. **The script walk completes** (`stopped early` is not shown). If it stops, the opcode table has a wrong entry near the
    reported offset; fix `script_opcode_lengths` in `data/game_tables.json`.
 
@@ -61,9 +71,9 @@ go (`{"address": "0x...", "kind": "...", "size": N}`):
 | Entry | How to find it |
 |---|---|
 | `tables.money` (`u32`) | Snapshot, then `ramdiff.py find SNAPSHOT --u32 <your money>`. Buy or sell something, snapshot again and search for the new amount. The address present in both searches is your money. Set `maximum` to the highest amount the game allows. |
-| `tables.parts_owned` (`bitfield` or `bytes`) | Snapshot, buy a part, snapshot, diff. Do it for two parts of the *same bot* (different slot) and two of the *same slot* (different bots). The distance between the changed bits tells you the layout: `model_major` if parts of the same bot are next to each other, `slot_major` if parts of the same slot are. Set `size` to cover all 480 entries (60 bytes for a bitfield). |
-| `tables.medals_owned` | The same, with a medal pickup. |
-| `tables.game_flags` (`bitfield`) | Snapshot, open one chest or take one gift, snapshot, diff with `--kinds bit_set`. The changed bit is the flag of that check. Repeat for several checks; the flags cluster in one array. The array starts at its lowest address; `size` must cover the highest flag you need. |
+| `tables.parts_owned` (`bitfield` or `bytes`) | Snapshot, buy a part, snapshot, diff. Do it for two parts of the *same bot* (different slot) and two of the *same slot* (different bots). The distance between the changes tells you the layout: `model_major` if parts of the same bot are next to each other, `slot_major` if parts of the same slot are. Set `size` to cover all 480 entries (60 bytes for a bitfield). A `bytes` table whose entries are wider than one byte (a count plus something else) takes `"stride"`; the first byte of an entry is the count. *(Found: `bytes`, stride 2, slot major.)* |
+| `tables.medals_owned` | The same, with a medal pickup. If the game keeps whole medal records instead of bits, use `"kind": "records"` with `"record_size"`; the client then builds records like the game's add-medal routine from the ROM medal table (`medal_table_offset` in `rom_versions.json`). *(Found: 30 records of 64 bytes.)* |
+| `tables.game_flags` (`bitfield`) | Snapshot, open one chest or take one gift, snapshot, diff with `--kinds bit_set`. The changed bit is the flag of that check. Repeat for several checks; the flags cluster in one array. The array starts at its lowest address; `size` must cover the highest flag you need. *(Found: 4096 event flags, two per byte; see the comment in `memory_map.json`. Locations refer to them by event number.)* |
 | `state.safe_to_deliver` | A byte that has one value while you walk around freely (list those in `values`) and another in menus, dialogue, battles and screen transitions. Take snapshots in each situation and diff them. The client delivers nothing unless this is true, so be strict. |
 | `state.in_battle` | A byte that is non-zero during a battle. |
 | `optional_tables.*` | Only if you find them: a value the game reads at the start of a battle for armor (`battle_armor_scale`, 100 means unchanged), for disabling the medal (`battle_medal_disable`) and for forcing an encounter (`force_encounter`). Leave them `null` if you cannot find them; the matching trap is then dropped from seeds automatically. |
@@ -78,21 +88,27 @@ When every required entry is filled in, set `"verified": true`. The loader refus
 
 For each location in `data/locations.json`:
 
-1. Play to it, snapshot before and after receiving the reward, and diff with `--kinds bit_set` to get its flag. Fill in
-   `"detect": {"type": "flag", "table": "game_flags", "bit": <index>}`. The bit index is counted from the start of the
-   `game_flags` table you entered above.
-2. Find the script instruction that grants the vanilla reward (for medals: the *give medal* instructions listed in
-   `report.json`; `analyze_rom.py --opcode 0xNN` shows the surrounding bytes of any opcode). Add
-   `"neutralize": {"offset": "0x...", "expect": "<original bytes>", "replace": "<replacement bytes>"}`, where `offset` is
-   relative to the script region start. The replacement must be the same length and must do nothing. Choose an opcode of
-   the same length that has no effect, apply the patch, trigger the event and confirm that the vanilla reward is gone
-   and the story continues.
+1. Find its reward script in the report's reward-script list (the map object at that spot has the same number), or play
+   to it, snapshot before and after receiving the reward, and diff with `--kinds bit_set`. Fill in
+   `"detect": {"type": "event", "flag": <n>}` for an event's done flag, or
+   `"detect": {"type": "event_value", "flag": <n>, "value": <v>}` when the script only raises the event's 3-bit value
+   (some trades do). `{"type": "flag", "table": "game_flags", "bit": <index>}` still works for a raw bit.
+2. Name the vanilla reward the patch must remove: `"neutralize": {"scripts": [<n>, ...], "opcodes": ["38", ...]}`. The
+   patch blanks every instruction with one of those opcodes in those scripts with the one-byte no-op `0x00`, and stops
+   if a script does not parse or holds no such instruction. Reward opcodes: `36` item, `38` part, `3A` money, `3C`
+   medal, `3D` Medabot. Scripts are addressed by number because a script's position in the ROM differs between
+   Metabee and Rokusho, while its number does not. Apply the patch, trigger the event and confirm that the vanilla
+   reward is gone, the flag is still set and the story continues.
 3. Check the name (`Area - Place Reward`), the `map` (it decides the area) and whether the spot can be missed
-   (`"missable": true`). Set `"status": "verified"`.
+   (`"missable": true`). Set `"status": "verified"`. A spot that holds no reward or cannot be detected gets
+   `"status": "absent"`: its row (and ID) stays, but it is never selected.
 
 New locations are added as new rows with a **new ID** (continue the numbering, never reuse or change an ID). Locations
-that turn out not to exist can stay in the file as long as they are never selected; removing a row breaks existing seeds
-only if it was ever released, so prefer fixing it.
+that turn out not to exist stay in the file with `"status": "absent"`; removing a row breaks existing seeds only if it
+was ever released, so prefer fixing it.
+
+To try a reward script without playing to it, the calibration notes describe how to start any event script (and warp)
+from a BizHawk Lua script by writing the script engine's state.
 
 Also confirm `data/regions.json`: the order of the areas, the `goal_event`, and the `goal_detect` flag that marks the end
 of the game. If the real order differs, reorder the areas (each must be listed after its parent).

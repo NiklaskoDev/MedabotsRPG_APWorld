@@ -30,7 +30,7 @@ class TestDefaults(MedabotsTestBase):
     def test_one_item_per_location(self):
         real = [loc for loc in self.multiworld.get_locations(self.player) if loc.address is not None]
         self.assertEqual(len(self.multiworld.itempool), len(real))
-        self.assertEqual(len(real), 11)
+        self.assertEqual(len(real), 9)  # the default categories hold 11 rows, two of them absent from the game
 
     def test_the_story_chain_is_beatable_only_with_everything(self):
         self.assertBeatable(False)
@@ -85,9 +85,11 @@ class TestDefaults(MedabotsTestBase):
 class TestEveryLocationCategory(MedabotsTestBase):
     options = {**MedabotsTestBase.options, **ALL_LOCATIONS, "battle_logic": "standard"}
 
-    def test_all_candidate_locations_exist(self):
-        real = [loc for loc in self.multiworld.get_locations(self.player) if loc.address is not None]
-        self.assertEqual(len(real), len(self.world.data.locations))
+    def test_every_existing_location_is_created(self):
+        real = {loc.name for loc in self.multiworld.get_locations(self.player) if loc.address is not None}
+        expected = {loc.name for loc in self.world.data.locations if not loc.absent}
+        self.assertEqual(real, expected)
+        self.assertTrue(any(loc.absent for loc in self.world.data.locations), "absent rows exist but are skipped")
 
 
 class TestSingleLocation(MedabotsTestBase):
@@ -155,7 +157,7 @@ class TestImpossibleCollectionGoalIsLowered(MedabotsTestBase):
     options = {**MedabotsTestBase.options, "goal": "collect_medals", "goal_medal_count": 28}
 
     def test_goal_fits_the_pool(self):
-        self.assertEqual(self.world.pool.goal_medal_count, 11)
+        self.assertEqual(self.world.pool.goal_medal_count, 9)
         self.collect_all_but([])
         self.assertBeatable(True)
 

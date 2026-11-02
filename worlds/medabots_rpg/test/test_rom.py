@@ -9,7 +9,7 @@ from .. import rom as rom_module
 from ..data_loader import get_world_data
 from ..rom import ApIdentity, MedabotsRPGProcedurePatch, collect_rewrites, write_patch
 from ..rom_info import RomError, identify_header, identify_rom
-from .support import SCRIPT_START, build_rom, verified_data
+from .support import SCRIPT_START, TEST_SCRIPT, build_rom, verified_data
 
 SHIPPED = get_world_data()
 VERIFIED = verified_data()
@@ -74,6 +74,7 @@ class TestIdentityBlock(unittest.TestCase):
         self.assertTrue(ApIdentity.unpack(identity.pack(BLOCK_SIZE)).unverified)
 
     def test_blank_memory_is_not_an_identity(self):
+        self.assertIsNone(ApIdentity.unpack(bytes(BLOCK_SIZE)))
         self.assertIsNone(ApIdentity.unpack(b"\xFF" * BLOCK_SIZE))
         self.assertIsNone(ApIdentity.unpack(b""))
 
@@ -129,39 +130,53 @@ class TestApplyingPatches(unittest.TestCase):
 
 
 class TestScriptRewrites(unittest.TestCase):
-    """Vanilla rewards are overwritten only where the expected original bytes are found."""
+    """Vanilla rewards are blanked out by script number, and only where the script holds such an instruction."""
 
-    def location(self, offset="0x1C", expect="3c0f", replace="3c01"):
-        neutralize = {"offset": offset, "expect": expect, "replace": replace}
-        return dataclasses.replace(VERIFIED.locations[0], neutralize=neutralize)
+    def location(self, scripts=(TEST_SCRIPT,), opcodes=("3C",), name=None):
+        neutralize = {"scripts": list(scripts), "opcodes": list(opcodes)}
+        location = dataclasses.replace(VERIFIED.locations[0], neutralize=neutralize)
+        return dataclasses.replace(location, name=name) if name else location
 
-    def rom_with_medal_instruction(self):
-        return build_rom(scripts=bytes([0x3C, 0x0F, 0x00]))  # right after the 28-byte first instruction (0x1C)
+    def rom_with_rewards(self):
+        # script TEST_SCRIPT: give medal 15, a one-byte no-op, give 500 money, give medal 1
+        return build_rom(scripts=bytes([0x3C, 0x0F, 0x00, 0x3A, 0x00, 0x32, 0x3C, 0x01]))
 
-    def test_rewrite_is_applied_in_place(self):
-        rom = self.rom_with_medal_instruction()
+    def test_matching_instructions_are_blanked_with_no_ops(self):
+        rom = self.rom_with_rewards()
         patched = apply_patch(rom, locations=[self.location()])
         start = SCRIPT_START + 0x1C
-        self.assertEqual(patched[start:start + 2], bytes([0x3C, 0x01]))
+        self.assertEqual(patched[start:start + 8], bytes([0, 0, 0x00, 0x3A, 0x00, 0x32, 0, 0]))
         changed = [i for i, (a, b) in enumerate(zip(rom, patched, strict=True)) if a != b and i < BLOCK]
-        self.assertEqual(changed, [start + 1])
+        self.assertEqual(changed, [start, start + 1, start + 6, start + 7])
 
-    def test_unexpected_original_bytes_stop_the_patch(self):
-        with self.assertRaisesRegex(RomError, "Unexpected data"):
-            apply_patch(self.rom_with_medal_instruction(), locations=[self.location(expect="3c10")])
+    def test_several_opcodes_and_scripts(self):
+        patched = apply_patch(self.rom_with_rewards(), locations=[self.location(opcodes=("3C", "3A"))])
+        self.assertEqual(patched[SCRIPT_START + 0x1C:SCRIPT_START + 0x24], bytes(8))
 
-    def test_rewrite_outside_the_region_is_refused(self):
-        with self.assertRaisesRegex(RomError, "outside the script region"):
-            apply_patch(build_rom(), locations=[self.location(offset="0x20000")])
+    def test_a_script_without_such_a_reward_stops_the_patch(self):
+        with self.assertRaisesRegex(RomError, "no reward instruction"):
+            apply_patch(self.rom_with_rewards(), locations=[self.location(opcodes=("38",))])
 
-    def test_overlapping_rewrites_are_refused(self):
-        first, second = self.location(), dataclasses.replace(self.location(), name="other")
-        second = dataclasses.replace(second, neutralize={"offset": "0x1D", "expect": "0f00", "replace": "0f01"})
-        with self.assertRaisesRegex(RomError, "overlap"):
-            collect_rewrites([first, second])
+    def test_an_unknown_script_stops_the_patch(self):
+        with self.assertRaisesRegex(RomError, "no event script number 7"):
+            apply_patch(self.rom_with_rewards(), locations=[self.location(scripts=(7,))])
+
+    def test_a_script_that_does_not_parse_stops_the_patch(self):
+        with self.assertRaisesRegex(RomError, "Unknown opcode 0xEE.*stopped before it could damage"):
+            apply_patch(build_rom(scripts=bytes([0x3C, 0x0F, 0xEE])), locations=[self.location()])
+
+    def test_two_locations_rewriting_one_script_are_refused(self):
+        with self.assertRaisesRegex(RomError, "Two locations rewrite event script 1"):
+            collect_rewrites([self.location(), self.location(name="other")])
 
     def test_no_rewrites_means_no_script_lookup(self):
-        """ROMs without a findable script region can still be patched when nothing needs rewriting."""
+        """ROMs without a findable script bank can still be patched when nothing needs rewriting."""
         rom = bytearray(build_rom())
         rom[SCRIPT_START:SCRIPT_START + 10] = bytes(10)  # destroy the signature
         self.assertIsNotNone(ApIdentity.unpack(apply_patch(bytes(rom))[BLOCK:BLOCK + BLOCK_SIZE]))
+
+    def test_a_missing_script_bank_stops_the_patch(self):
+        rom = bytearray(self.rom_with_rewards())
+        rom[SCRIPT_START - 0x8000] = 0x12  # break the bank header
+        with self.assertRaisesRegex(RomError, "bank header"):
+            apply_patch(bytes(rom), locations=[self.location()])
