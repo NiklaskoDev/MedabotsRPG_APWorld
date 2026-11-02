@@ -15,6 +15,7 @@ typing_extensions>=4.12
 pathspec>=0.12
 setuptools<81
 
-# Test and lint tooling
+# Test and lint tooling (docutils renders option descriptions exactly like the WebHost does)
 pytest>=8.0
 ruff>=0.6
+docutils>=0.20

@@ -58,6 +58,31 @@ class TestOptionDefinitions(unittest.TestCase):
         self.assertEqual(set(TrapWeights.default), trap_names)
 
 
+try:
+    from docutils.core import publish_parts
+except ImportError:  # the WebHost needs docutils; the world itself does not
+    publish_parts = None
+
+
+@unittest.skipIf(publish_parts is None, "docutils is not installed")
+class TestRenderedDescriptions(unittest.TestCase):
+    """The WebHost renders option descriptions as reStructuredText; any warning there means a broken page."""
+
+    def test_every_description_renders_without_warnings(self):
+        import io
+        from textwrap import dedent
+        for name, option in OWN_OPTIONS.items():
+            text = option.__doc__
+            lines = text.splitlines()
+            text = lines[0] + "\n" + dedent("\n".join(lines[1:]))  # the same preparation the WebHost applies
+            warnings = io.StringIO()
+            html = publish_parts(text, writer="html", settings=None, settings_overrides={
+                "raw_enable": False, "file_insertion_enabled": False, "output_encoding": "unicode",
+                "warning_stream": warnings, "report_level": 1})["body"]
+            self.assertEqual(warnings.getvalue(), "", f"{name}: {warnings.getvalue()}")
+            self.assertIn("<p>", html, name)
+
+
 class TestPresets(unittest.TestCase):
     def test_presets_only_use_real_options_and_valid_values(self):
         self.assertGreaterEqual(len(OPTION_PRESETS), 3)
