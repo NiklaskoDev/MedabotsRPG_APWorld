@@ -78,7 +78,8 @@ perfectly safe to make progress offline; everything will re-sync when you reconn
 
 | Message | What it means and what to do |
 |---|---|
-| *This version of the world has not been verified against a real ROM yet…* (when generating) | This is a pre-release. Set `allow_unverified_build: true` in your YAML only if you are testing the world. |
+| *This version of the world has not been verified against a real ROM yet…* (when generating) | The data of this version of the world has been verified against a real ROM, so you should not see this. It appears with a development build or a modified copy of the world whose data is marked as unverified. Install the release from the [releases page](https://github.com/NiklaskoDev/MedabotsRPG_APWorld/releases). To test such a build on purpose, set `allow_unverified_build: true` in your YAML (under *Advanced*); seeds generated that way may not be playable. |
+| *The selected options leave no locations to randomize…* (when generating) | Every location category you switched on is empty. Only medal pickups, chests and ground pickups, boss rewards and mini-game prizes have checks so far. Gifts from characters, shop purchases and trainer Robattles do not, so turn at least one of the first four on. |
 | *This is an unpatched Medabots ROM.* | You loaded the original ROM. Open your `.apmedabots` file with the Launcher and load the patched `.gba` it creates. |
 | *This ROM was patched for a different multiworld than the one on this server.* | Your ROM belongs to another seed. Connect to the right server, or patch again with the matching `.apmedabots` file. |
 | *This seed was generated with a different version of the Medabots RPG world…* | Install the version of the world named in the message. |
