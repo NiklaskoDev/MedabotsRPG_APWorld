@@ -2,7 +2,8 @@
 # Developer entry point. CI uses exactly the same commands, so "works on my machine" == "works in CI".
 #
 #   tools/dev.sh setup             clone Archipelago core and create the virtualenv
-#   tools/dev.sh test [pytest...]  copy the world into Archipelago and run its test suite
+#   tools/dev.sh test [pytest...]  copy the world into Archipelago and run the world's and the tools' tests
+#   tools/dev.sh run SCRIPT [args] run a script from tools/ with the world and Archipelago importable
 #   tools/dev.sh lint              run ruff over the repository
 #   tools/dev.sh build             build dist/medabots_rpg.apworld with Archipelago's own packager
 #   tools/dev.sh clean             delete the local Archipelago checkout, virtualenv and build output
@@ -72,6 +73,20 @@ cmd_test() {
     sync_world
     log "Running tests against Archipelago $AP_REF"
     run_in_core -m pytest "worlds/$WORLD_PACKAGE" -q -p no:cacheprovider "$@"
+    # The developer tools' own tests only run on a full test run (a -k filter targets the world's tests).
+    if [[ $# -eq 0 ]]; then
+        log "Running tool tests"
+        PYTHONPATH="$AP_DIR" run_in_core -m pytest "$REPO_ROOT/tools/tests" -q -p no:cacheprovider
+    fi
+}
+
+cmd_run() {
+    [[ $# -ge 1 ]] || die "usage: tools/dev.sh run SCRIPT [args...]"
+    cmd_setup >/dev/null
+    sync_world
+    local script="$1"; shift
+    [[ "$script" = /* ]] || script="$REPO_ROOT/$script"
+    PYTHONPATH="$AP_DIR" run_in_core "$script" "$@"
 }
 
 cmd_lint() {
@@ -96,6 +111,7 @@ cmd_clean() { rm -rf "$AP_DIR" "$VENV_DIR" "$REPO_ROOT/dist" "$REPO_ROOT/build";
 case "${1:-}" in
     setup) cmd_setup ;;
     test)  shift; cmd_test "$@" ;;
+    run)   shift; cmd_run "$@" ;;
     lint)  cmd_lint ;;
     build) cmd_build ;;
     clean) cmd_clean ;;

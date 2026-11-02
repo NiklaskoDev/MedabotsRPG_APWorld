@@ -27,7 +27,8 @@ from .effects import (
     readable_tables,
     story_complete,
 )
-from .rom import ApIdentity, PatchError, identify_header
+from .rom import ApIdentity
+from .rom_info import RomError, identify_header
 
 if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
@@ -77,7 +78,7 @@ class MedabotsRPGClient(BizHawkClient):
 
         try:
             identify_header(header, self.data)
-        except PatchError:
+        except RomError:
             return False  # some other game; stay quiet so other clients can claim it
 
         identity = ApIdentity.unpack(block)

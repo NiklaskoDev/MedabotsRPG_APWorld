@@ -21,7 +21,8 @@ import settings
 from worlds.Files import APPatchExtension, APProcedurePatch, APTokenMixin, APTokenTypes
 
 from .constants import GAME_NAME
-from .data_loader import LocationDef, RomVersion, WorldData, get_world_data
+from .data_loader import LocationDef, WorldData, get_world_data
+from .rom_info import RomError, identify_rom
 from .rom_scripts import ScriptError, locate_script_region
 from .version import world_version
 
@@ -34,32 +35,6 @@ IDENTITY_MAGIC = b"APMEDABT"
 IDENTITY_FORMAT = 1
 _IDENTITY = struct.Struct("<8sHH16s16sBB64s")
 _MAX_NAME_BYTES = 64
-
-
-class PatchError(Exception):
-    """A problem the player can act on. The message is shown to them as is."""
-
-
-# ---------------------------------------------------------------------------------------------------------------------
-# ROM identification
-# ---------------------------------------------------------------------------------------------------------------------
-def identify_header(header: bytes, data: WorldData) -> RomVersion:
-    """Match a ROM header (the 18 bytes at the header offset) to a supported version."""
-    version = data.rom.identify(header)
-    if version is not None:
-        return version
-    if (reason := data.rom.unsupported_reason(header)) is not None:
-        raise PatchError(reason)
-    supported = ", ".join(v.label for v in data.rom.versions)
-    raise PatchError(f"This ROM is not a supported version of Medabots. Supported versions: {supported}.")
-
-
-def identify_rom(rom: bytes, data: WorldData) -> RomVersion:
-    info = data.rom
-    end = info.header_offset + info.header_length
-    if len(rom) < end:
-        raise PatchError("This file is too small to be a Game Boy Advance ROM.")
-    return identify_header(rom[info.header_offset:end], data)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -86,7 +61,7 @@ class ApIdentity:
     def pack(self, size: int) -> bytes:
         name = self.player_name.encode("utf-8")
         if len(name) > _MAX_NAME_BYTES:
-            raise PatchError(f"Slot name {self.player_name!r} is too long.")
+            raise RomError(f"Slot name {self.player_name!r} is too long.")
         raw = _IDENTITY.pack(IDENTITY_MAGIC, IDENTITY_FORMAT, self.slot, self.seed_digest, self.data_digest,
                              int(self.unverified), len(name), name.ljust(_MAX_NAME_BYTES, b"\0"))
         return raw.ljust(size, bytes([BLANK_BYTE]))
@@ -111,7 +86,7 @@ def collect_rewrites(locations: list[LocationDef]) -> list[dict[str, str]]:
     spans = sorted((int(r["offset"], 0), int(r["offset"], 0) + len(bytes.fromhex(r["expect"]))) for r in rewrites)
     for (_, end), (start, _) in zip(spans, spans[1:], strict=False):
         if start < end:
-            raise PatchError(f"Two script rewrites overlap at script offset 0x{start:X}. This is a data error.")
+            raise RomError(f"Two script rewrites overlap at script offset 0x{start:X}. This is a data error.")
     return rewrites
 
 
@@ -128,7 +103,7 @@ def write_patch(
     """Fill a patch container for one player."""
     block_offset, block_size = data.memory_map.ap_block_offset, data.memory_map.ap_block_size
     if block_offset is None or block_size is None:
-        raise PatchError("The memory map does not define where to store the seed identity block.")
+        raise RomError("The memory map does not define where to store the seed identity block.")
 
     identity = ApIdentity(slot, ApIdentity.digest_seed(seed_name), ApIdentity.digest_data(data.content_hash),
                           not data.is_verified, player_name)
@@ -147,7 +122,7 @@ def write_patch(
 def _load_meta(caller: APProcedurePatch, meta_file: str) -> dict[str, Any]:
     meta = json.loads(caller.get_file(meta_file))
     if meta.get("format") != PATCH_FORMAT:
-        raise PatchError("This patch was made by an incompatible version of the Medabots RPG world.")
+        raise RomError("This patch was made by an incompatible version of the Medabots RPG world.")
     return meta
 
 
@@ -158,18 +133,20 @@ class MedabotsRPGPatchExtension(APPatchExtension):
     def verify_rom(caller: APProcedurePatch, rom: bytes, meta_file: str) -> bytes:
         meta, data = _load_meta(caller, meta_file), get_world_data()
         if meta["data_hash"] != data.content_hash:
-            raise PatchError(
+            raise RomError(
                 f"This patch was generated with Medabots RPG world version {meta['world_version']}, but version "
                 f"{world_version()} is installed. Install the matching version of the world to apply it."
             )
         if not data.is_verified and not meta["allow_unverified"]:
-            raise PatchError("This build of the world has not been verified against a real ROM, so it will not patch.")
+            raise RomError("This build of the world has not been verified against a real ROM, so it will not patch.")
         identify_rom(rom, data)
 
         offset, size = data.memory_map.ap_block_offset, data.memory_map.ap_block_size
+        if offset is None or size is None:
+            raise RomError("The memory map does not define where to store the seed identity block.")
         region = rom[offset:offset + size]
         if len(region) != size or any(byte != BLANK_BYTE for byte in region):
-            raise PatchError(
+            raise RomError(
                 f"The ROM already has data where the patch wants to write (offset 0x{offset:X}). "
                 "Is it already patched, or modified by another tool? Use a clean, unmodified ROM."
             )
@@ -183,7 +160,7 @@ class MedabotsRPGPatchExtension(APPatchExtension):
         try:
             region = locate_script_region(rom, data.rom)
         except ScriptError as exc:
-            raise PatchError(str(exc)) from exc
+            raise RomError(str(exc)) from exc
 
         patched = bytearray(rom)
         for rewrite in meta["rewrites"]:
@@ -191,9 +168,9 @@ class MedabotsRPGPatchExtension(APPatchExtension):
             relative = int(rewrite["offset"], 0)
             start = region.start + relative
             if relative < 0 or relative + len(expect) > region.length:
-                raise PatchError(f"A script rewrite at 0x{relative:X} lies outside the script region.")
+                raise RomError(f"A script rewrite at 0x{relative:X} lies outside the script region.")
             if bytes(patched[start:start + len(expect)]) != expect:
-                raise PatchError(
+                raise RomError(
                     f"Unexpected data at script offset 0x{relative:X}. This ROM differs from the one the world "
                     "was built for, so the patch was stopped before it could damage the game."
                 )

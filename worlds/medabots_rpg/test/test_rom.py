@@ -7,15 +7,8 @@ from unittest import mock
 
 from .. import rom as rom_module
 from ..data_loader import get_world_data
-from ..rom import (
-    ApIdentity,
-    MedabotsRPGProcedurePatch,
-    PatchError,
-    collect_rewrites,
-    identify_header,
-    identify_rom,
-    write_patch,
-)
+from ..rom import ApIdentity, MedabotsRPGProcedurePatch, collect_rewrites, write_patch
+from ..rom_info import RomError, identify_header, identify_rom
 from .support import SCRIPT_START, build_rom, verified_data
 
 SHIPPED = get_world_data()
@@ -48,19 +41,19 @@ class TestIdentification(unittest.TestCase):
             self.assertEqual(identify_rom(rom, SHIPPED), version)
 
     def test_japanese_rom_gets_a_specific_message(self):
-        with self.assertRaisesRegex(PatchError, "Japanese"):
+        with self.assertRaisesRegex(RomError, "Japanese"):
             identify_header(b"MEDACOREKBTV2222E9", SHIPPED)
 
     def test_medabots_ax_gets_a_specific_message(self):
-        with self.assertRaisesRegex(PatchError, "Medabots AX"):
+        with self.assertRaisesRegex(RomError, "Medabots AX"):
             identify_header(b"MEDABOTSAXRKSVAAAA", SHIPPED)
 
     def test_unknown_rom_lists_supported_versions(self):
-        with self.assertRaisesRegex(PatchError, "Metabee Version \\(USA\\)"):
+        with self.assertRaisesRegex(RomError, "Metabee Version \\(USA\\)"):
             identify_header(b"POKEMON EMER" + b"BPEE01", SHIPPED)
 
     def test_tiny_file(self):
-        with self.assertRaisesRegex(PatchError, "too small"):
+        with self.assertRaisesRegex(RomError, "too small"):
             identify_rom(b"\0" * 10, SHIPPED)
 
 
@@ -85,7 +78,7 @@ class TestIdentityBlock(unittest.TestCase):
         self.assertIsNone(ApIdentity.unpack(b""))
 
     def test_too_long_name_is_refused(self):
-        with self.assertRaises(PatchError):
+        with self.assertRaises(RomError):
             dataclasses.replace(self.identity, player_name="x" * 65).pack(BLOCK_SIZE)
 
     def test_digests_differ_per_seed(self):
@@ -109,25 +102,25 @@ class TestApplyingPatches(unittest.TestCase):
             self.assertIsNotNone(ApIdentity.unpack(apply_patch(build_rom(version.header_id))[BLOCK:]))
 
     def test_already_patched_rom_is_refused(self):
-        with self.assertRaisesRegex(PatchError, "already has data"):
+        with self.assertRaisesRegex(RomError, "already has data"):
             apply_patch(apply_patch(build_rom()))
 
     def test_modified_memory_at_the_target_is_refused(self):
         rom = bytearray(build_rom())
         rom[BLOCK + 10] = 0x12
-        with self.assertRaisesRegex(PatchError, "already has data"):
+        with self.assertRaisesRegex(RomError, "already has data"):
             apply_patch(bytes(rom))
 
     def test_unsupported_rom_is_refused(self):
-        with self.assertRaisesRegex(PatchError, "not a supported version"):
+        with self.assertRaisesRegex(RomError, "not a supported version"):
             apply_patch(build_rom("POKEMON EMERBPEE01"))
 
     def test_patch_from_other_data_version_is_refused(self):
-        with self.assertRaisesRegex(PatchError, "Install the matching version"):
+        with self.assertRaisesRegex(RomError, "Install the matching version"):
             apply_patch(build_rom(), build_data=SHIPPED, installed_data=VERIFIED, allow_unverified=True)
 
     def test_unverified_build_will_not_patch_without_opt_in(self):
-        with self.assertRaisesRegex(PatchError, "not been verified"):
+        with self.assertRaisesRegex(RomError, "not been verified"):
             apply_patch(build_rom(), build_data=SHIPPED, installed_data=SHIPPED, allow_unverified=False)
 
     def test_unverified_build_patches_with_opt_in_and_says_so(self):
@@ -154,17 +147,17 @@ class TestScriptRewrites(unittest.TestCase):
         self.assertEqual(changed, [start + 1])
 
     def test_unexpected_original_bytes_stop_the_patch(self):
-        with self.assertRaisesRegex(PatchError, "Unexpected data"):
+        with self.assertRaisesRegex(RomError, "Unexpected data"):
             apply_patch(self.rom_with_medal_instruction(), locations=[self.location(expect="3c10")])
 
     def test_rewrite_outside_the_region_is_refused(self):
-        with self.assertRaisesRegex(PatchError, "outside the script region"):
+        with self.assertRaisesRegex(RomError, "outside the script region"):
             apply_patch(build_rom(), locations=[self.location(offset="0x20000")])
 
     def test_overlapping_rewrites_are_refused(self):
         first, second = self.location(), dataclasses.replace(self.location(), name="other")
         second = dataclasses.replace(second, neutralize={"offset": "0x1D", "expect": "0f00", "replace": "0f01"})
-        with self.assertRaisesRegex(PatchError, "overlap"):
+        with self.assertRaisesRegex(RomError, "overlap"):
             collect_rewrites([first, second])
 
     def test_no_rewrites_means_no_script_lookup(self):
