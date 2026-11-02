@@ -1,0 +1,25 @@
+{
+  "_comment": "Items that cannot be derived from game_tables.json. Medaparts (10000 + model*4 + slot) and medals (11000 + medal id) are generated from the tables. IDs are permanent: never renumber or reuse one, only add.",
+  "id_bases": {"part": 10000, "medal": 11000, "consumable": 12000, "trap": 13000},
+  "pool_exclusions": {
+    "_comment": "Never added to a random item pool. '?' and '!' look like placeholder medals; to be verified against the ROM.",
+    "medals": ["?", "!"],
+    "bots": []
+  },
+  "version_exclusive": {
+    "_comment": "Taken from the community wiki; the other version's copy can only be had by link trade in the original game. The wiki also lists 'Knight Armor' (Metabee) and 'Monoklar' (Rokusho), but no bot with those names exists in the ROM table, so they are left out until the real names are confirmed.",
+    "metabee": {"bots": ["Face Lantern", "Octoclam", "Sharkkan"], "medals": ["Kabuto"]},
+    "rokusho": {"bots": ["Giggly Jelly", "Orkamar", "Spidar"], "medals": ["Kuwagata"]}
+  },
+  "consumables": [
+    {"id": 12001, "name": "Money Pouch (Small)", "effect": {"type": "money", "amount": 200}, "weight": 5},
+    {"id": 12002, "name": "Money Pouch (Medium)", "effect": {"type": "money", "amount": 1000}, "weight": 3},
+    {"id": 12003, "name": "Money Pouch (Large)", "effect": {"type": "money", "amount": 5000}, "weight": 1}
+  ],
+  "traps": [
+    {"id": 13001, "name": "Money Drain Trap", "trap": "money_drain", "requires": ["tables.money", "state.safe_to_deliver"]},
+    {"id": 13002, "name": "Rusty Armor Trap", "trap": "rusty_armor", "requires": ["optional_tables.battle_armor_scale", "state.in_battle"]},
+    {"id": 13003, "name": "Medal Nap Trap", "trap": "medal_nap", "requires": ["optional_tables.battle_medal_disable", "state.in_battle"]},
+    {"id": 13004, "name": "Ambush Trap", "trap": "ambush", "requires": ["optional_tables.force_encounter", "state.safe_to_deliver"]}
+  ]
+}

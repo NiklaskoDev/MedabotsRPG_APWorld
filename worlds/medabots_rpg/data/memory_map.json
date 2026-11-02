@@ -1,0 +1,36 @@
+{
+  "_comment": "Everything the client and patcher need to know about game memory. 'verified' stays false until every entry below has been confirmed on a real ROM (see docs/CALIBRATION.md). A null entry means 'not yet known' and disables the feature that needs it instead of guessing. Table shapes: {\"address\": \"0x...\", \"kind\": \"bitfield|bytes|u8|u16|u32\", \"size\": N}; state flags may add \"values\": [..] listing the byte values that mean yes. optional_tables only back individual traps and may stay null in a verified map; a trap whose entries are null is dropped at generation.",
+  "verified": false,
+  "bizhawk_domain": "System Bus",
+  "ap_block": {
+    "_comment": "ROM region written by the patch with the seed/slot identity. The patcher refuses to write unless the whole region is still blank (0xFF).",
+    "rom_offset": "0x7FF000",
+    "size": 256
+  },
+  "tables": {
+    "game_flags": null,
+    "parts_owned": null,
+    "medals_owned": null,
+    "money": null
+  },
+  "state": {
+    "safe_to_deliver": null,
+    "in_battle": null
+  },
+  "optional_tables": {
+    "battle_armor_scale": null,
+    "battle_medal_disable": null,
+    "force_encounter": null
+  },
+  "hints": {
+    "_comment": "Unverified pointers from the community randomizer's reverse-engineering notes. Use them as starting points for calibration only; they are never read by the client.",
+    "party_slot_struct": {
+      "address": "0x030017A0",
+      "note": "Byte 0 = state, byte 2 = medal id, bytes 3-6 = head/right arm/left arm/legs model IDs (written by the starter-equip routine at ROM offset 0x044B58)."
+    },
+    "flags_byte": {
+      "address": "0x03000BE0",
+      "note": "OR-ed with 0xC0 by the starter-equip routine."
+    }
+  }
+}

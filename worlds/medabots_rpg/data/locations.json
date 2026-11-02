@@ -1,0 +1,37 @@
+{
+  "_comment": "Check locations. 'map' must be a name from game_tables.json; the area is derived from it via regions.json. status 'candidate' = inferred from a documented map name only (never from guesswork about contents); the ROM analyzer promotes entries to 'verified' and fills 'detect'. IDs are permanent: never renumber or reuse one, only add.",
+  "categories": {
+    "medal": "Medal pickups and medal rooms",
+    "chest": "Chests, lockers and ground pickups",
+    "npc_gift": "Gifts from characters",
+    "boss": "Story and boss Robattle rewards",
+    "minigame": "Mini-game prizes",
+    "shop": "Shop purchases",
+    "battle": "Trainer Robattles"
+  },
+  "locations": [
+    {"id": 20001, "name": "Research Center - Nae's Medal Room Medal", "map": "Medabots Research Center - Nae's medal room", "category": "medal", "status": "candidate"},
+    {"id": 20002, "name": "Odoro Marsh - Broken Parts Room Salvage", "map": "Odoro Marsh - Broken parts room", "category": "chest", "status": "candidate"},
+    {"id": 20003, "name": "Odoro Marsh - Squidguts Battle Reward", "map": "Odoro Marsh - Place where you fight Squidguts", "category": "boss", "status": "candidate"},
+    {"id": 20004, "name": "Medabot Island - Arcade Prize", "map": "Medabot Island - Arcade", "category": "minigame", "status": "candidate"},
+    {"id": 20005, "name": "Medabot Island - Surprise Site Left Locker", "map": "Medabot Island - Surprise site left lockers", "category": "chest", "status": "candidate"},
+    {"id": 20006, "name": "Medabot Island - Surprise Site Right Locker", "map": "Medabot Island - Surprise site right lockers", "category": "chest", "status": "candidate"},
+    {"id": 20007, "name": "Rosewood School - Medal Room Medal", "map": "Rosewood Private School - Second Floor - Medal Room", "category": "medal", "status": "candidate"},
+    {"id": 20008, "name": "Rubberobo Base - Medal Room Medal", "map": "Rubberobo Secret Base - Medal Room", "category": "medal", "status": "candidate"},
+    {"id": 20009, "name": "Fort Fiyun - Four Chest Room Chest 1", "map": "Fort Fiyun - 4 Chest Room", "category": "chest", "status": "candidate"},
+    {"id": 20010, "name": "Fort Fiyun - Four Chest Room Chest 2", "map": "Fort Fiyun - 4 Chest Room", "category": "chest", "status": "candidate"},
+    {"id": 20011, "name": "Fort Fiyun - Four Chest Room Chest 3", "map": "Fort Fiyun - 4 Chest Room", "category": "chest", "status": "candidate"},
+    {"id": 20012, "name": "Fort Fiyun - Four Chest Room Chest 4", "map": "Fort Fiyun - 4 Chest Room", "category": "chest", "status": "candidate"},
+    {"id": 20013, "name": "Ninja Park - Hide & Seek House Tour Prize", "map": "Ninja Park - Ninja House Entrance Hall (\"Ninja Hide & Seek House Tour\")", "category": "minigame", "status": "candidate"},
+
+    {"id": 20101, "name": "Medabot Island - Shop Purchase", "map": "Medabot Island - Shop", "category": "shop", "status": "candidate"},
+    {"id": 20102, "name": "Medaropolis - Medashop Floor 1 Purchase", "map": "Medaropolis Area 1 - Medashop - Floor 1", "category": "shop", "status": "candidate"},
+    {"id": 20103, "name": "Medaropolis - Medashop Floor 2 Purchase", "map": "Medaropolis Area 1 - Medashop - Floor 2", "category": "shop", "status": "candidate"},
+    {"id": 20104, "name": "Medaropolis - Medashop Floor 3 Purchase", "map": "Medaropolis Area 1 - Medashop - Floor 3", "category": "shop", "status": "candidate"},
+    {"id": 20105, "name": "Medaropolis - Medamall Floor 1 Purchase", "map": "Medaropolis Area 2 - Medamall", "category": "shop", "status": "candidate"},
+    {"id": 20106, "name": "Medaropolis - Medamall Floor 2 Purchase", "map": "Medaropolis Area 2 - Medamall floor 2", "category": "shop", "status": "candidate"},
+    {"id": 20107, "name": "Medaropolis - Area 3 Shop Purchase", "map": "Medaropolis Area 3 - Shop", "category": "shop", "status": "candidate"},
+    {"id": 20108, "name": "Kodine Kingdom - Shop Purchase", "map": "Kodine Kingdom - Shop", "category": "shop", "status": "candidate"},
+    {"id": 20109, "name": "Ninja Park - Souvenir Shop Purchase", "map": "Ninja Park - Southwest House (Souvenir Shop)", "category": "shop", "status": "candidate"}
+  ]
+}

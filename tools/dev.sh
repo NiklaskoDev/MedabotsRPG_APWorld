@@ -32,7 +32,7 @@ ensure_core() {
     fi
     log "Fetching Archipelago $AP_REF into ${AP_DIR#"$REPO_ROOT"/}"
     rm -rf "$AP_DIR"
-    git clone --quiet --depth 1 --branch "$AP_REF" "$AP_REPO_URL" "$AP_DIR"
+    git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$AP_REF" "$AP_REPO_URL" "$AP_DIR"
     # Only keep the worlds we need. Every other world drags in its own third-party dependencies,
     # which would slow tests down and make them fail for reasons unrelated to this project.
     find "$AP_DIR/worlds" -mindepth 1 -maxdepth 1 -type d \

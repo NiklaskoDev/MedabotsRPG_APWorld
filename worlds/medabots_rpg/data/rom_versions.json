@@ -1,0 +1,59 @@
+{
+  "_comment": "ROM identification and table offsets for the four English GBA releases. Source: STulling/Medabots-Randomizer (MIT), see NOTICE. Offsets are file offsets; 'header_id' is the 18 bytes at header_offset (12-byte title + 4-byte game code + 2-byte maker code).",
+  "header_offset": "0xA0",
+  "header_length": 18,
+  "versions": [
+    {
+      "id": "metabee_us",
+      "label": "Medabots: Metabee Version (USA)",
+      "version": "metabee",
+      "region": "us",
+      "header_id": "MEDABOTSMTBVA8BEE9",
+      "battles_offset": "0x3C19E0",
+      "starter_offset": "0x78409B",
+      "text_offset": "0x47E43C"
+    },
+    {
+      "id": "metabee_eu",
+      "label": "Medabots: Metabee Version (Europe)",
+      "version": "metabee",
+      "region": "eu",
+      "header_id": "MEDABOTSMTBVA8BPE9",
+      "battles_offset": "0x3C1B80",
+      "starter_offset": "0x7852CF",
+      "text_offset": "0x47DF24"
+    },
+    {
+      "id": "rokusho_us",
+      "label": "Medabots: Rokusho Version (USA)",
+      "version": "rokusho",
+      "region": "us",
+      "header_id": "MEDABOTSRKSVA9BEE9",
+      "battles_offset": "0x3C1A00",
+      "starter_offset": "0x7840C0",
+      "text_offset": "0x47E45C"
+    },
+    {
+      "id": "rokusho_eu",
+      "label": "Medabots: Rokusho Version (Europe)",
+      "version": "rokusho",
+      "region": "eu",
+      "header_id": "MEDABOTSRKSVA9BPE9",
+      "battles_offset": "0x3C1BA0",
+      "starter_offset": "0x7852F4",
+      "text_offset": "0x47DF44"
+    }
+  ],
+  "unsupported_header_prefixes": {
+    "MEDACORE": "This is a Japanese Medarot ROM. Only the English Medabots: Metabee / Rokusho ROMs are supported.",
+    "MEDABOTSAX": "This is Medabots AX, a different game. Only Medabots: Metabee / Rokusho is supported."
+  },
+  "signatures": {
+    "_comment": "Byte patterns that locate tables inside any of the four ROMs (first match). 'event_scripts' is the start of the script bytecode region.",
+    "event_scripts": {"bytes": "2F1B031134008601010A", "region_length": "0x18000"},
+    "shop_contents": {"bytes": "1300FFFF130042FF1300"},
+    "part_table": {"bytes": "0F220200231508010800"},
+    "encounter_table": {"bytes": "000000009BF59BA79BF5"},
+    "starter_medal": {"bytes": "010200565D01621701", "target_adjust": -1}
+  }
+}

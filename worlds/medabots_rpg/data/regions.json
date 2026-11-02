@@ -1,0 +1,26 @@
+{
+  "_comment": "Story areas, in provisional story order (follows the order of the documented map table until the real order is confirmed). Each area is entered from its 'from' area once that area's 'Cleared' event is reached. Every documented map must belong to exactly one area through map_prefixes.",
+  "order_status": "provisional",
+  "areas": [
+    {
+      "name": "Riverview",
+      "map_prefixes": [
+        "Riverview City", "Riverview Public School", "Ikki's house", "Erika's house", "Samantha's house",
+        "Spyke's house", "Sloan's house", "???'s house", "Medabots Research Center", "Medabots Museum",
+        "Old Factory", "Docks Warehouse"
+      ]
+    },
+    {"name": "Mt. Odori and Odoro Marsh", "from": "Riverview", "map_prefixes": ["Mt. Odori", "Odoro Marsh"]},
+    {"name": "Medabot Island", "from": "Mt. Odori and Odoro Marsh", "map_prefixes": ["Medabot Island", "Shark -"]},
+    {"name": "Haunted House", "from": "Medabot Island", "map_prefixes": ["Haunted House"]},
+    {"name": "Castle", "from": "Haunted House", "map_prefixes": ["Castle -"]},
+    {"name": "Medaropolis", "from": "Castle", "map_prefixes": ["Medaropolis Area"]},
+    {"name": "Rosewood Private School", "from": "Medaropolis", "map_prefixes": ["Rosewood Private School"]},
+    {"name": "Rubberobo Secret Base", "from": "Rosewood Private School", "map_prefixes": ["Rubberobo Secret Base"]},
+    {"name": "Fort Fiyun", "from": "Rubberobo Secret Base", "map_prefixes": ["Fort Fiyun"]},
+    {"name": "Kodine Kingdom", "from": "Fort Fiyun", "map_prefixes": ["Kodine Kingdom"]},
+    {"name": "Ninja Park", "from": "Kodine Kingdom", "map_prefixes": ["Ninja Park"]}
+  ],
+  "goal_event": "Story Complete",
+  "goal_detect": null
+}

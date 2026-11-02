@@ -1,0 +1,15 @@
+{
+  "_comment": "Logic tuning. 'battle_logic' gates each area behind a share of the medaparts in the item pool so that the player is plausibly strong enough; the share grows linearly from 0 in the first area to final_parts_fraction in the last.",
+  "battle_logic": {
+    "relaxed": {"final_parts_fraction": 0.15},
+    "standard": {"final_parts_fraction": 0.30}
+  },
+  "max_gate_share_of_prior_locations": 0.5,
+  "trap_strength": {
+    "_comment": "Per trap, one value per strength. money_drain: percent of money lost. rusty_armor: percent of armor kept during the next battle. medal_nap and ambush: how many battles / encounters it lasts.",
+    "money_drain": {"mild": 10, "normal": 25, "harsh": 50},
+    "rusty_armor": {"mild": 80, "normal": 60, "harsh": 40},
+    "medal_nap": {"mild": 1, "normal": 1, "harsh": 2},
+    "ambush": {"mild": 1, "normal": 1, "harsh": 2}
+  }
+}
