@@ -1,0 +1,15 @@
+# Lint configuration for the APWorld and its dev tools.
+# The world must stay importable on every Python version Archipelago supports (3.11+).
+line-length = 120
+target-version = "py311"
+extend-exclude = [".ap-core", ".venv", "build", "dist"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "UP007",  # keep typing.Optional / Union readable for Archipelago's option machinery
+    "UP045",
+]
+
+[lint.isort]
+known-first-party = ["worlds"]

@@ -1,0 +1,25 @@
+# Local development environment (created by tools/dev.sh)
+.ap-core/
+.venv/
+dist/
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Never commit game files or generated output
+*.gba
+*.sav
+*.ss[0-9]
+*.apmedabots
+*.apworld
+Output/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
