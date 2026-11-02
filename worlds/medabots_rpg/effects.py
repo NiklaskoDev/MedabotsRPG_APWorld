@@ -89,6 +89,9 @@ class Snapshot:
         if kind == "event_value":
             value = self.event_value(detect["flag"])
             return value is not None and value >= detect["value"]
+        if kind == "byte_at_least":
+            raw = self.raw.get(f"tables.{detect['table']}")
+            return raw is not None and detect["offset"] < len(raw) and raw[detect["offset"]] >= detect["value"]
         return False
 
     def state_is_set(self, name: str) -> bool | None:
@@ -306,10 +309,16 @@ def _start_trap(data: WorldData, ws: _Workspace, state: ClientState, key: str, s
     path = _TRAP_TABLE[key]
     if path not in ws.buffers:
         return
-    value = levels[strength] if key == "rusty_armor" else 1
+    value = levels[strength] if key == "rusty_armor" else _trigger_value(ws, path)
     ws.buffers[path][:] = value.to_bytes(len(ws.buffers[path]), "little")
     battles = 1 if key == "rusty_armor" else levels[strength]
     state.traps = [t for t in state.traps if t.key != key] + [ActiveTrap(key, battles, now)]
+
+
+def _trigger_value(ws: _Workspace, path: str) -> int:
+    """What switches a trap's memory entry on: its first listed value (the encounter counter wants 32), else 1."""
+    ref = ws.memory_map.resolve(path)
+    return ref.values[0] if ref is not None and ref.values else 1
 
 
 def _update_traps(ws: _Workspace, state: ClientState, in_battle: bool | None, now: float) -> None:
@@ -327,7 +336,8 @@ def _update_traps(ws: _Workspace, state: ClientState, in_battle: bool | None, no
                 ws.buffers[path][:] = revert.to_bytes(len(ws.buffers[path]), "little")
             continue
         if battle_ended and trap.key == "ambush" and path in ws.buffers:
-            ws.buffers[path][:] = (1).to_bytes(len(ws.buffers[path]), "little")  # the next ambush of the series
+            value = _trigger_value(ws, path)  # the next ambush of the series
+            ws.buffers[path][:] = value.to_bytes(len(ws.buffers[path]), "little")
         still_active.append(trap)
     state.traps = still_active
     if in_battle is not None:

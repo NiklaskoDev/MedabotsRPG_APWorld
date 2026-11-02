@@ -38,6 +38,7 @@ from worlds.medabots_rpg.rom_scripts import (
 )
 
 GIVE_MEDAL_OPCODE = 0x3C
+ROM_BASE = 0x08000000
 REWARD_OPCODES = {0x36: "item", 0x38: "part", 0x3A: "money", 0x3C: "medal", 0x3D: "medabot"}
 """Script opcodes that hand the player something; 'neutralize' entries in locations.json name these."""
 SET_FLAG_OPCODE = 0x13
@@ -65,12 +66,17 @@ def locate_tables(rom: bytes, data: WorldData) -> dict[str, Any]:
 
 
 def decode_battles(rom: bytes, data: WorldData, offset: int) -> list[dict[str, Any]]:
-    """Decode the battle table: character, number of bots, and each bot's parts, medal and medal level."""
+    """Decode the battle table: character, number of bots, and each bot's parts, medal and medal level.
+
+    ``offset`` is a table of 32-bit ROM pointers, one per battle, to the 40-byte records (this is how the battle code
+    at 0x08011E84 in Metabee USA reads it).
+    """
     layout = data.tables.record_layouts["battle"]
     size, count = layout["size"], layout["count"]
     tables, battles = data.tables, []
     for index in range(count):
-        record = rom[offset + index * size: offset + (index + 1) * size]
+        pointer = int.from_bytes(rom[offset + index * 4: offset + index * 4 + 4], "little") - ROM_BASE
+        record = rom[pointer: pointer + size] if 0 <= pointer < len(rom) else b""
         if len(record) < size:
             break
         bots = []

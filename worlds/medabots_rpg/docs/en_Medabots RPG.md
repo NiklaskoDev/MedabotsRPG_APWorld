@@ -1,7 +1,7 @@
 # Medabots RPG
 
-> **Pre-release.** This version of the world has not yet been verified against a real ROM, so seeds cannot be generated
-> without opting in (see [Status](#status)). Everything below describes what the world is designed to do.
+> **Pre-release.** The world has been checked in the real game, but not yet played through in a full multiworld, and
+> it has only a few checks so far (see [Status](#status)).
 
 ## Where is the options page?
 
@@ -16,7 +16,8 @@ the multiworld. The story, its order and its cutscenes are left exactly as they 
 
 ## What are the goals?
 
-* **Story Complete** (default): finish the story by completing the last area.
+* **Story Complete** (default): finish the story. The goal is sent once the ending and its staff roll have played and
+  you are back home.
 * **Collect Medals** or **Collect Medaparts**: receive a chosen number of different medals or medaparts.
 
 ## What items and locations get randomized?
@@ -25,7 +26,7 @@ the multiworld. The story, its order and its cutscenes are left exactly as they 
 
 * **Medaparts**: any of the 480 heads, arms and legs, for example `Head: Psycho Missile (Noctobat)`.
 * **Medals**: any of the medals, for example `Medal: Kabuto`.
-* **Money pouches**: small, medium and large piles of money. These are the filler of the game.
+* **Money pouches**: $10, $50 or $200. These are the filler of the game.
 * **Traps**, if you enable them (see below).
 
 **Locations** (each category can be switched on or off in the options): medal pickups, chests and ground pickups,
@@ -48,9 +49,9 @@ Traps are filler items with a short, harmless sting. They are always temporary a
 | Trap | Effect |
 |---|---|
 | Money Drain | You lose a share of your money (never below zero). |
-| Rusty Armor | Your Medabot's armor is reduced for the next Robattle only. |
-| Medal Nap | Your medal's special ability is disabled for the next Robattle. |
-| Ambush | A random Robattle is triggered. |
+| Rusty Armor | Your Medabot's armor is reduced for the next Robattle only. *Not available yet.* |
+| Medal Nap | Your medal's special ability is disabled for the next Robattle. *Not available yet.* |
+| Ambush | A random Robattle is triggered on your next step in an area with wild Robattles. |
 
 Traps only take effect while you are walking around freely, never in the middle of a menu, a cutscene or a battle you
 did not choose, and a trap that cannot be applied yet waits instead of being lost. You choose how many there are,
@@ -70,7 +71,7 @@ item pool unless you enable **Include Version-Exclusive Items**.
 
 ## Status
 
-Item names and IDs come from documented game tables, but the exact list of check locations and the memory addresses the
-client reads have not been confirmed on a real ROM yet. Until they are, generating a seed requires
-`allow_unverified_build: true`, and the client and patcher warn you. Progress is tracked in the
+Item names and IDs come from documented game tables. The check locations, the memory addresses the client reads and
+the end of the story have been confirmed in BizHawk on Metabee (USA), and the addresses also on Rokusho (Europe). There
+are only 11 checks so far, and a full multiworld play-test is still to come. Progress is tracked in the
 [project repository](https://github.com/NiklaskoDev/MedabotsRPG_APWorld).

@@ -3,7 +3,7 @@ import copy
 import unittest
 
 from ..data_loader import DataError, DictDataSource, get_world_data, load_world_data
-from .support import raw_data
+from .support import LARGE_POUCH, MEDIUM_POUCH, SMALL_POUCH, raw_data
 
 
 class TestShippedData(unittest.TestCase):
@@ -47,13 +47,28 @@ class TestShippedData(unittest.TestCase):
             self.assertNotIn("  ", name)
             self.assertLessEqual(len(name), 80, name)
 
-    def test_partly_calibrated_data_is_not_marked_verified(self):
-        """The memory map is calibrated, but the goal flag and some locations are not yet, so the whole world must
-        still say it is unverified (it drives the gate)."""
+    def test_money_pouches_match_the_games_own_rewards(self):
+        """Money is stored in cents. Chests give $1 to $50, the best prize $200, and a scripted part sale costs $50 to
+        $100 a part, so the pouches add $10, $50 and $200 (the wallet holds $999.99)."""
+        amounts = {i.name: i.data["effect"]["amount"] for i in self.data.items if i.kind == "consumable"}
+        self.assertEqual(amounts, {"Money Pouch (Small)": SMALL_POUCH, "Money Pouch (Medium)": MEDIUM_POUCH,
+                                   "Money Pouch (Large)": LARGE_POUCH})
+        self.assertEqual((SMALL_POUCH, MEDIUM_POUCH, LARGE_POUCH), (1000, 5000, 20000))
+        self.assertLess(LARGE_POUCH, self.data.memory_map.tables["money"].maximum)
+
+    def test_the_calibrated_world_is_verified(self):
+        """Memory map, every existing location and the ending event are confirmed in the game."""
         self.assertTrue(self.data.memory_map.verified)
-        self.assertFalse(self.data.is_verified)
-        self.assertIsNone(self.data.goal_detect)
-        self.assertTrue(any(loc.status == "candidate" for loc in self.data.locations))
+        self.assertTrue(all(loc.verified or loc.absent for loc in self.data.locations))
+        self.assertEqual(dict(self.data.goal_detect), {"type": "event", "flag": 147})
+        self.assertEqual(self.data.goal_status, "verified")
+        self.assertTrue(self.data.is_verified)
+
+    def test_a_candidate_goal_keeps_the_world_unverified(self):
+        """The goal drives the generation gate like the locations do."""
+        raw = copy.deepcopy(raw_data())
+        raw["regions"]["goal_status"] = "candidate"
+        self.assertFalse(load_world_data(DictDataSource(raw)).is_verified)
 
     def test_verified_locations_detect_and_neutralize(self):
         """Every verified location says how it is seen and which vanilla reward the patch removes."""
@@ -136,6 +151,16 @@ class TestValidation(unittest.TestCase):
         def mutate(raw):
             raw["memory_map"]["tables"]["money"] = None
         self.assertRejected(mutate, "marked verified but is missing")
+
+    def test_byte_detection_must_stay_inside_its_table(self):
+        def mutate(raw):
+            raw["regions"]["goal_detect"] = {"type": "byte_at_least", "table": "game_flags", "offset": 4096, "value": 9}
+        self.assertRejected(mutate, "an 'offset' inside it")
+
+    def test_unknown_goal_status(self):
+        def mutate(raw):
+            raw["regions"]["goal_status"] = "probably"
+        self.assertRejected(mutate, "goal_status must be")
 
     def test_records_table_needs_a_record_size(self):
         def mutate(raw):

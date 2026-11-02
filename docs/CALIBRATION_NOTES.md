@@ -50,11 +50,12 @@ eight stats (`min(100, (level // 10 + 1) × base)`). A new medal starts half way
 medal level. Bytes 1, 2 and 7 and the stat bases come from the 16-byte medal table entry. The client now writes exactly
 this record; the party's byte 2 refers to a medal by id.
 
-**Not yet known.** `battle_armor_scale`, `battle_medal_disable` and `force_encounter` stay `null`, so seeds drop the
-Rusty Armor, Medal Nap and Ambush traps (Money Drain works). The random battle id is chosen into script state +
-`0xC2A` (`0x0300640A`) from the map's encounter table when `0x0300640D` is 0; that is the likely hook for
-`force_encounter`. The start menu could not be opened during calibration (its unlock condition was not found), so the
-safe state was not observed with the menu open.
+**Traps.** `force_encounter` is the random-encounter step counter (`0x0300640B`, script state + `0xC2B`): on maps with
+encounters (script state + `0xC29` set) the check at `0x080438C4` adds one per step, rolls 1 in 32 from step 17 to 31
+and always starts a Robattle above 31, then resets it. Writing 32 forced an encounter on the next step in Metabee (USA)
+and Rokusho (Europe), so the Ambush trap works. The game has no armor scale or medal switch: armor lives in the battle
+part records (see the second pass), so Rusty Armor and Medal Nap would need client code that edits those records during
+a battle; `battle_armor_scale` and `battle_medal_disable` stay `null` and seeds drop those two traps.
 
 **Delivery rule.** Delivery now also waits while `in_battle` is set, so a random-encounter battle (which runs no event
 script) is never written to.
@@ -68,18 +69,18 @@ and on a ROM patched by the world (flag set, no vanilla reward, script ends norm
 |---|---|---|---|---|---|
 | 20001 | Nae's medal room | 236-241 (choose one of six) | event 230 | medal | verified |
 | 20002 | Broken parts room | 384 | event 384 | item `0x04` | verified |
-| 20003 | Squidguts | 368 | event 368 | 2 parts + medal | candidate: rewards and removal confirmed, the flag is set after two Robattles that the test party could not win |
-| 20004 | Arcade prize | 489 / 495 | none found | | candidate |
+| 20003 | Squidguts | 368 | event 368 | 2 parts + medal | verified (run with its dialogue and battles blanked in a test copy, see below) |
+| 20004 | Arcade prize | 495 (win the $1 game) | event 494 value 2 | item `0x32` | verified (win forced through the result byte) |
 | 20005 | Surprise site left locker | none | | | absent: no reward on the map |
 | 20006 | Surprise site right locker | 606 (a part trade) | event 606 value 1 | the received part (the hand-in stays) | verified |
 | 20007 | Rosewood medal room | 1317 | | | absent: a display, text only |
 | 20008 | Rubberobo medal room | 1548 | event 1548 | money (2000) | verified; renamed "Medal Room Chest", the room holds money, not a medal |
 | 20009-20012 | Fort Fiyun four chests | 1608-1611 | events 1608-1611 | a Medabot, 5000, 500, 500 money | verified |
-| 20013 | Ninja hide & seek prize | probably 1971 (Main Area) | | | candidate |
+| 20013 | Ninja hide & seek prize | 1971 (Main Area) | event 1971 | $5 to $200, Repair Spring for the best result | verified |
 | 20101-20109 | Shop purchases | | | | absent: buying sets no flag |
 
-Money note: script money is ten times the script operand (chests give 500 to 5000), while money pouches add 200, 1000
-and 5000. The pouch sizes may want rebalancing.
+Money note: script money is ten times the script operand, in cents (chests give 500 to 5000, $5 to $50). The money
+pouches were resized to match, see the third pass.
 
 ## Starting scripts and warping from a Lua script
 
@@ -99,14 +100,11 @@ Useful for trying a reward without playing to it (all addresses Metabee USA, sam
 
 ## What is left
 
-1. **`goal_detect`.** The flag that marks the end of the story was not identified (the credits mode is entry 20 of the
-   scene table at `0x483AE0`; what starts it was not traced). Without it the Story Complete goal cannot be detected.
-2. **The three candidate locations** above, and the start-menu state.
-3. **The other versions at runtime.** RAM addresses were only exercised on Metabee (USA); the code that uses them is
-   identical in all four ROMs, but CALIBRATION.md asks for one more version to be checked.
-4. **Story order** in `regions.json` is still the provisional one.
-5. **More locations.** `analyze_rom.py` lists 180 reward scripts; the world uses 22 rows of which 8 are verified.
-6. **Step 5**, the two-player play-test.
+1. **Rusty Armor and Medal Nap** need client code that edits the battle part records; no single address exists.
+2. **More locations.** `analyze_rom.py` lists 180 reward scripts; the world uses 22 rows (11 verified, 11 absent).
+3. **Step 5**, the two-player play-test, including a real playthrough to the ending.
+
+The goal and the money pouches, listed here before, were done in the third pass.
 
 ## Second pass (same day): open items
 
@@ -118,16 +116,49 @@ Useful for trying a reward without playing to it (all addresses Metabee USA, sam
   while walking, in a chest dialogue, in and after a won Robattle, in the B menu, the Medawatch screen and at the real
   title screen. State entries may now be a list of conditions that must all hold.
 * **The menu** opens with **B** (not Start) once `0x03006413` (script state + `0xC33`, set by opcode `0x5D`) is non-zero.
-  It shows money as dollars and cents: the stored money is in cents, so the client's money pouches (200/1000/5000) are
-  only $2/$10/$50 while chests give $5-$50. Worth rebalancing.
+  It shows money as dollars and cents: the stored money is in cents, so the client's money pouches (200/1000/5000) were
+  only $2/$10/$50 while chests give $5-$50 (resized in the third pass).
 * **Story order** comes from the game's chapter byte (`0x03005FDF`, set by opcode `0x6B`; map objects carry a chapter
   mask): Riverview (0-1), Mt. Odori/Odoro Marsh (2), Medabot Island, Haunted House and a first Castle visit (3),
   Medaropolis and Rosewood (4), Rubberobo and a first Fort Fiyun visit (5), Kodine Kingdom (6), Fort Fiyun (7), the
   Castle finale with Mega-Emperor (event 916) and Babyblu (8), then chapter 9 (Babyblu rematch, most of Ninja Park),
   set by Ikki's-room trigger 157 after the chapter-8 return home. By first visit this matches `regions.json`.
-* **Goal (not yet in the data).** Best candidate: the chapter byte reaching 9, i.e. byte `0x7FF` of `game_flags`. The
-  credits are scene 20 (reached from the battle-end code through scenes 25 and 12) but the exact trigger was not traced.
+* **Goal.** `goal_detect` is the chapter byte reaching 9 (byte `0x7FF` of `game_flags`, new detection type
+  `byte_at_least`), with `goal_status: candidate`. Chapter 9 is set only by trigger 157 after the chapter-8 finale and
+  holds only post-game content. The credits are scene 20 (reached from the battle-end code through scenes 25 and 12);
+  the finale itself could not be played through out of context (its dialogue stalls in a synthetic save). The world
+  counts as verified only once the goal is, and the generation gate now uses the same rule as the patcher.
+  *Replaced in the third pass by event 147, and the staff roll turned out to be scene 22.*
 * **Winning battles for tests.** Battle part records are 0x18 bytes, current armor at +0x11: own side from `0x030005D8`,
   enemies from `0x030008D8`, bots 0x100 apart. Keeping enemy armor at 1 and own at 255 wins any Robattle.
-* **Analyzer bug.** `battles_offset` is a table of pointers to the 40-byte records (which follow the encounter table);
-  `analyze_rom.py` still decodes the pointers as records.
+* **Analyzer bug fixed.** `battles_offset` is a table of pointers to the 40-byte records (which follow the encounter
+  table); `analyze_rom.py` now follows them.
+* **Squidguts, the arcade and Ninja Park.** Run from a savestate after warping (script opcode `0x0B`, then `0x56` to
+  rebuild the map objects) and stepping on the trigger. Some dialogue stalls in a synthetic save, so Squidguts was run on
+  copies of the original and the patched ROM with its dialogue and battle instructions blanked: rewards, then flag 368
+  (original); flag 368, no rewards (patched). The arcade game's result is the byte `0x03005349` (1 won, 2 lost), tested
+  by opcode `0x4F`; forcing a win gave item `0x32` and event 494 value 2, the patched ROM only the value.
+* **Second version.** Rokusho (Europe), from a fresh new game: event flags (1609, 148), money, the item bag, part
+  counts, a medal record, the menu, a Robattle (mode and sub-scenes), the title screen and a forced encounter all
+  behave exactly as in Metabee (USA).
+
+## Third pass (same day): the ending and the money pouches
+
+* **The ending.** The ending movie (opcode `0x79`, movies 8, 9 and 10) and the staff roll (main mode 2, scene 22) run in
+  three scripts: 2070 and 2073 on the chapter-8 docks (map 188) and 1902 in the Fort Fiyun courtyard (map 170). After
+  the movie each one warps Ikki home (map 16) and sets **event 147**. No other script sets event 147 and none clears it,
+  in all four ROMs. In BizHawk (Metabee USA, on a copy with the text instructions blanked so the scenes run unattended)
+  2070 and 2073 played the staff roll, warped home, ran script 132 and left event 147 done (`0x03005829` bit 3). On that
+  copy 1902 never left its movie (Start, A and B did nothing), so it was only checked in the script: it reaches event
+  147 the same way. Which of the three a playthrough reaches was not traced; the goal does not need to know.
+* **Goal.** `goal_detect` is now `{"type": "event", "flag": 147}` with `goal_status: verified`. The chapter byte was the
+  wrong choice: chapter 9 is set only when Ikki later walks over trigger 157 in his room, so a chapter goal would fire
+  late, or never for a player who stops after the credits. With the goal verified the whole world counts as verified,
+  and seeds generate without `allow_unverified_build`. `byte_at_least` stays available as a detection type.
+* **Money in the scripts.** Opcode `0x3A` gives its operand x 10 cents: $1 to $60 from chests and gifts (most often $1
+  and $50), $100 from two gifts (scripts 534 and 1549), and up to $200 from the Ninja Park prize (1971). Opcode `0x3B`
+  takes money: $1 to $20 for small fees, $49.80 once (269), and $50, $80 and $100 a part at the three part sellers
+  (195, 196, 197). The wallet holds $999.99. The Medashop menu prices were not read.
+* **Money pouches** now add **$10, $50 and $200** (1000, 5000 and 20000 cents; they were $2, $10 and $50). With the
+  weights 5:3:1 a pouch is worth about $44 on average, roughly one chest, and the large pouch matches the game's best
+  money prize.

@@ -1,6 +1,6 @@
 {
-  "_comment": "Story areas, in provisional story order (follows the order of the documented map table until the real order is confirmed). Each area is entered from its 'from' area once that area's 'Cleared' event is reached. Every documented map must belong to exactly one area through map_prefixes.",
-  "order_status": "provisional",
+  "_comment": "Story areas in story order, by first visit. Each area is entered from its 'from' area once that area's 'Cleared' event is reached. Every documented map must belong to exactly one area through map_prefixes. The order was checked against the game's chapter counter (0x03005FDF, set by script opcode 0x6B; every map object carries a mask of the chapters it exists in): Riverview 0-1, Mt. Odori and Odoro Marsh 2, Medabot Island, the Haunted House and a first Castle visit 3, Medaropolis and Rosewood 4, Rubberobo base and a first Fort Fiyun visit 5, Kodine Kingdom 6, Fort Fiyun 7, the Castle finale 8, Ninja Park mostly 9. Castle and Fort Fiyun are visited again later; a single chain can only place them by their first visit.",
+  "order_status": "confirmed",
   "areas": [
     {
       "name": "Riverview",
@@ -22,5 +22,7 @@
     {"name": "Ninja Park", "from": "Kodine Kingdom", "map_prefixes": ["Ninja Park"]}
   ],
   "goal_event": "Story Complete",
-  "goal_detect": null
+  "_goal_comment": "Event 147 is set by exactly three scripts, the endings 1902, 2070 and 2073, right after the ending movie and the staff roll, when they send Ikki home; no script ever clears it (all four ROMs). Seen in BizHawk on Metabee (USA) for 2070 and 2073: staff roll, warp home, event 147 done. The chapter counter (byte 0x7FF of game_flags) is no good: chapter 9 is only set later by the Ikki's-room trigger 157.",
+  "goal_detect": {"type": "event", "flag": 147},
+  "goal_status": "verified"
 }

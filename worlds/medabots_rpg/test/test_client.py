@@ -14,7 +14,9 @@ from .support import (
     FLAG_BIT_SQUIDGUTS,
     FLAG_BIT_STORY_COMPLETE,
     FLAGS,
+    MEDIUM_POUCH,
     MONEY,
+    SMALL_POUCH,
     SYSTEM_BUS,
     FakeMemory,
     build_rom,
@@ -247,13 +249,13 @@ class TestGameWatcher(ClientTestCase):
     async def test_items_are_delivered_announced_and_counted(self):
         ctx = await self.connect(received=[("Money Pouch (Medium)", 2, 0b001)])
         await self.client.game_watcher(ctx)
-        self.assertEqual(self.memory.u32(MONEY), 1000)
+        self.assertEqual(self.memory.u32(MONEY), MEDIUM_POUCH)
         self.assertEqual(self.bh.messages, ["Received Money Pouch (Medium) from Misty"])
         counter = [m for m in ctx.sent if m["cmd"] == "Set"]
         self.assertEqual(counter[0]["key"], "medabots_rpg_0_1_applied")
         self.assertEqual(counter[0]["operations"], [{"operation": "replace", "value": 1}])
         await self.client.game_watcher(ctx)
-        self.assertEqual(self.memory.u32(MONEY), 1000, "not delivered twice")
+        self.assertEqual(self.memory.u32(MONEY), MEDIUM_POUCH, "not delivered twice")
 
     async def test_nothing_is_delivered_before_the_counter_is_known(self):
         ctx = await self.connect(received=[("Money Pouch (Medium)", 2, 0)])
@@ -268,7 +270,7 @@ class TestGameWatcher(ClientTestCase):
         self.assertEqual((self.memory.u32(MONEY), self.client.state.applied_index, self.bh.messages), (0, 0, []))
         self.assertEqual([m for m in ctx.sent if m["cmd"] == "Set"], [])
         await self.client.game_watcher(ctx)
-        self.assertEqual((self.memory.u32(MONEY), self.client.state.applied_index), (200, 1))
+        self.assertEqual((self.memory.u32(MONEY), self.client.state.applied_index), (SMALL_POUCH, 1))
 
     async def test_bizhawk_hiccups_are_survived(self):
         ctx = await self.connect(received=[("Money Pouch (Small)", 2, 0)])
@@ -276,7 +278,7 @@ class TestGameWatcher(ClientTestCase):
         await self.client.game_watcher(ctx)  # must not raise
         self.bh.raise_on_read = False
         await self.client.game_watcher(ctx)
-        self.assertEqual(self.memory.u32(MONEY), 200)
+        self.assertEqual(self.memory.u32(MONEY), SMALL_POUCH)
 
     async def test_progression_only_messages(self):
         ctx = await self.connect(received=[("Money Pouch (Small)", 2, 0), ("Medal: Cat", 2, 0b001)])

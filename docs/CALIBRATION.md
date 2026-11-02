@@ -10,13 +10,14 @@ You are done when:
 * `data/memory_map.json` has `"verified": true` and every required entry filled in,
 * every location in `data/locations.json` has `"status": "verified"` with a `detect` entry (and a `neutralize` entry
   where the vanilla reward must be removed), or `"status": "absent"` when it turned out not to exist,
-* `data/regions.json` has a `goal_detect` entry,
+* `data/regions.json` has a `goal_detect` entry and `"goal_status": "verified"`,
 * `tools/dev.sh test` passes, and a two-player test multiworld plays through (step 5).
 
 **Where things stand** (calibration of 2026-11-02, see [CALIBRATION_NOTES.md](CALIBRATION_NOTES.md) for every
-finding and how it was confirmed): the memory map is verified; 8 locations are verified, 11 are absent and 3 are still
-candidates (Squidguts, the arcade prize, the Ninja Park prize); `goal_detect` and the trap-only addresses are not known
-yet, and the start-menu state was not observed. The world therefore still reports itself as unverified.
+finding and how it was confirmed): the memory map is verified on Metabee (USA) and Rokusho (Europe); all 11 existing
+locations are verified and 11 are absent; the story order is confirmed; the goal is the ending's event 147, seen set
+after the staff roll. The world therefore counts as verified and seeds generate without `allow_unverified_build`.
+Rusty Armor and Medal Nap have no address to poke and stay unavailable. Step 5, the multiworld play-test, is still open.
 
 ## Requirements
 
@@ -111,7 +112,8 @@ To try a reward script without playing to it, the calibration notes describe how
 from a BizHawk Lua script by writing the script engine's state.
 
 Also confirm `data/regions.json`: the order of the areas, the `goal_event`, and the `goal_detect` flag that marks the end
-of the game. If the real order differs, reorder the areas (each must be listed after its parent).
+of the game, then set `goal_status` to `verified`; until then the world counts as unverified. If the real order differs,
+reorder the areas (each must be listed after its parent).
 
 ## Step 3: check the other three ROM versions
 

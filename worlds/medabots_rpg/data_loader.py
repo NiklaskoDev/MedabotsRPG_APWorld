@@ -242,6 +242,8 @@ class WorldData:
     areas: tuple[Area, ...]
     goal_event: str
     goal_detect: Mapping[str, Any] | None
+    goal_status: str
+    """``verified`` once the goal detection was seen to fire at the real end of the story, else ``candidate``."""
     locations: tuple[LocationDef, ...]
     location_categories: Mapping[str, str]
     """Location category key -> human readable description."""
@@ -270,7 +272,7 @@ class WorldData:
     @property
     def is_verified(self) -> bool:
         """True when the memory map, the goal flag and every existing location are confirmed against a real ROM."""
-        return (self.memory_map.verified and self.goal_detect is not None
+        return (self.memory_map.verified and self.goal_detect is not None and self.goal_status == STATUS_VERIFIED
                 and all(loc.verified for loc in self.locations if not loc.absent))
 
 
@@ -513,8 +515,9 @@ def _neutralize_problems(loc: LocationDef, tables: GameTables) -> list[str]:
 
 
 def detect_problems(detect: Mapping[str, Any] | None, memory_map: MemoryMap, where: str) -> list[str]:
-    """Check a ``detect`` entry: ``flag`` (a raw bit of a table), ``event`` (an event's done flag) or
-    ``event_value`` (an event's 3-bit value reaching ``value``)."""
+    """Check a ``detect`` entry: ``flag`` (a raw bit of a table), ``event`` (an event's done flag),
+    ``event_value`` (an event's 3-bit value reaching ``value``) or ``byte_at_least`` (one byte of a table reaching
+    ``value``, such as the chapter counter)."""
     if detect is None:
         return []
     kind = detect.get("type")
@@ -527,6 +530,13 @@ def detect_problems(detect: Mapping[str, Any] | None, memory_map: MemoryMap, whe
             return [f"{where}: an {kind!r} detection needs an event 'flag' between 0 and {MAX_EVENT_FLAG}"]
         if kind == "event_value" and detect.get("value") not in range(1, 8):
             return [f"{where}: an 'event_value' detection needs a 'value' between 1 and 7"]
+        return []
+    if kind == "byte_at_least":
+        ref = memory_map.tables.get(detect.get("table"))
+        if ref is None or not isinstance(detect.get("offset"), int) or not 0 <= detect["offset"] < ref.size:
+            return [f"{where}: a 'byte_at_least' detection needs a known 'table' and an 'offset' inside it"]
+        if not isinstance(detect.get("value"), int) or not 0 < detect["value"] < 256:
+            return [f"{where}: a 'byte_at_least' detection needs a 'value' between 1 and 255"]
         return []
     return [f"{where}: unknown detection type {kind!r}"]
 
@@ -633,6 +643,8 @@ def validate(data: WorldData) -> list[str]:
                 problems.append(f"trap {item.name!r} requires unknown memory map entry {path!r}")
 
     problems += detect_problems(data.goal_detect, data.memory_map, "regions.json goal_detect")
+    if data.goal_status not in (STATUS_CANDIDATE, STATUS_VERIFIED):
+        problems.append(f"regions.json goal_status must be {STATUS_CANDIDATE!r} or {STATUS_VERIFIED!r}")
 
     # Memory map
     problems += _memory_map_problems(data.memory_map)
@@ -662,6 +674,7 @@ def load_world_data(source: DataSource | None = None) -> WorldData:
         areas=areas,
         goal_event=raw["regions"]["goal_event"],
         goal_detect=raw["regions"].get("goal_detect"),
+        goal_status=raw["regions"].get("goal_status", STATUS_CANDIDATE),
         locations=_build_locations(areas, raw["locations"]),
         location_categories=dict(raw["locations"]["categories"]),
         items=_build_items(tables, raw["items"]),

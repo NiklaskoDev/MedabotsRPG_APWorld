@@ -9,9 +9,10 @@ from .. import rom as rom_module
 from ..data_loader import get_world_data
 from ..rom import ApIdentity, MedabotsRPGProcedurePatch, collect_rewrites, write_patch
 from ..rom_info import RomError, identify_header, identify_rom
-from .support import SCRIPT_START, TEST_SCRIPT, build_rom, verified_data
+from .support import SCRIPT_START, TEST_SCRIPT, build_rom, unverified_data, verified_data
 
 SHIPPED = get_world_data()
+UNVERIFIED = unverified_data()
 VERIFIED = verified_data()
 BLOCK = VERIFIED.memory_map.ap_block_offset
 BLOCK_SIZE = VERIFIED.memory_map.ap_block_size
@@ -118,14 +119,14 @@ class TestApplyingPatches(unittest.TestCase):
 
     def test_patch_from_other_data_version_is_refused(self):
         with self.assertRaisesRegex(RomError, "Install the matching version"):
-            apply_patch(build_rom(), build_data=SHIPPED, installed_data=VERIFIED, allow_unverified=True)
+            apply_patch(build_rom(), build_data=UNVERIFIED, installed_data=VERIFIED, allow_unverified=True)
 
     def test_unverified_build_will_not_patch_without_opt_in(self):
         with self.assertRaisesRegex(RomError, "not been verified"):
-            apply_patch(build_rom(), build_data=SHIPPED, installed_data=SHIPPED, allow_unverified=False)
+            apply_patch(build_rom(), build_data=UNVERIFIED, installed_data=UNVERIFIED, allow_unverified=False)
 
     def test_unverified_build_patches_with_opt_in_and_says_so(self):
-        patched = apply_patch(build_rom(), build_data=SHIPPED, installed_data=SHIPPED, allow_unverified=True)
+        patched = apply_patch(build_rom(), build_data=UNVERIFIED, installed_data=UNVERIFIED, allow_unverified=True)
         self.assertTrue(ApIdentity.unpack(patched[BLOCK:BLOCK + BLOCK_SIZE]).unverified)
 
 

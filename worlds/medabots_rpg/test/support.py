@@ -1,9 +1,10 @@
 """Test helpers: synthetic verified data sets, a synthetic ROM and a fake BizHawk memory.
 
-The shipped data is not fully verified, so everything that needs a "verified" world, such as delivering items or
+The shipped data points at real GBA addresses, so everything that reads or writes memory, such as delivering items or
 patching, is tested against data built here. ``verified_data`` uses an invented, simple layout (bitfields only);
 ``shaped_data`` uses the shapes calibration found in the real game (nibble event flags, two-byte part counts and the
-medal case of 64-byte records), relocated into the fake RAM window.
+medal case of 64-byte records), relocated into the fake RAM window. ``unverified_data`` is the shipped data with one
+part of it unconfirmed, for the refusals.
 """
 from __future__ import annotations
 
@@ -45,7 +46,12 @@ SHAPED_MONEY = RAM_BASE + 0x2400
 SHAPED_SAFE = RAM_BASE + 0x2410
 SHAPED_MODE = RAM_BASE + 0x2411
 SHAPED_SCENE = RAM_BASE + 0x2412
-STORY_COMPLETE_EVENT = 2070
+SHAPED_ENCOUNTER = RAM_BASE + 0x2413
+CHAPTER_BYTE = 2047
+"""Offset of the chapter counter in the game_flags table (the last chapter is 9)."""
+
+SMALL_POUCH, MEDIUM_POUCH, LARGE_POUCH = 1000, 5000, 20000
+"""What the money pouches add, in cents ($10, $50, $200); test_data checks them against items.json."""
 
 
 def medal_table() -> bytes:
@@ -57,6 +63,13 @@ def raw_data() -> dict[str, Any]:
     """The shipped JSON files as plain dictionaries (deep copies, safe to modify)."""
     source = PackageDataSource()
     return {name: json.loads(source.read(name)) for name in DATA_FILES}
+
+
+def unverified_data() -> WorldData:
+    """The shipped data with its story goal set back to a candidate, which makes the whole world unverified."""
+    raw = copy.deepcopy(raw_data())
+    raw["regions"]["goal_status"] = "candidate"
+    return load_world_data(DictDataSource(raw))
 
 
 def verified_data(parts_layout: str = "model_major", with_optional: bool = True) -> WorldData:
@@ -85,6 +98,7 @@ def verified_data(parts_layout: str = "model_major", with_optional: bool = True)
         },
     )
     raw["regions"]["goal_detect"] = {"type": "flag", "table": "game_flags", "bit": FLAG_BIT_STORY_COMPLETE}
+    raw["regions"]["goal_status"] = "verified"
     for entry in raw["locations"]["locations"]:
         if entry["status"] != "absent":
             entry["status"] = "verified"
@@ -105,7 +119,8 @@ def shaped_data() -> WorldData:
     state = raw["memory_map"]["state"]
     state["safe_to_deliver"][0]["address"], state["safe_to_deliver"][1]["address"] = hex(SHAPED_SAFE), hex(SHAPED_MODE)
     state["in_battle"][0]["address"], state["in_battle"][1]["address"] = hex(SHAPED_MODE), hex(SHAPED_SCENE)
-    raw["regions"]["goal_detect"] = {"type": "event", "flag": STORY_COMPLETE_EVENT}
+    raw["memory_map"]["optional_tables"]["force_encounter"]["address"] = hex(SHAPED_ENCOUNTER)
+    raw["regions"]["goal_status"] = "verified"
     for entry in raw["locations"]["locations"]:
         if entry["status"] != "absent":
             entry["status"] = "verified"

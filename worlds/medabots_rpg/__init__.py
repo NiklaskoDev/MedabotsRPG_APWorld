@@ -106,7 +106,7 @@ class MedabotsRPGWorld(World):
     def _enforce_verification_gate(self) -> None:
         """Refuse to build a seed from data that has not been checked against a real ROM (invariant G1)."""
         unverified = [loc for loc in self.active_locations if not loc.verified]
-        if self.data.memory_map.verified and not unverified:
+        if self.data.is_verified and not unverified:
             return
         if not self.options.allow_unverified_build:
             raise OptionError(
@@ -115,9 +115,10 @@ class MedabotsRPGWorld(World):
                 f"'allow_unverified_build: true' in your YAML. Details: {REPOSITORY_URL}"
             )
         logging.warning(
-            "Medabots RPG (%s): generating from unverified data (%d of %d locations unverified, memory map %s).",
+            "Medabots RPG (%s): generating from unverified data (%d of %d locations unverified, memory map %s, "
+            "story goal %s).",
             self.player_name, len(unverified), len(self.active_locations),
-            "verified" if self.data.memory_map.verified else "unverified",
+            "verified" if self.data.memory_map.verified else "unverified", self.data.goal_status,
         )
 
     def create_regions(self) -> None:

@@ -74,7 +74,13 @@
   "optional_tables": {
     "battle_armor_scale": null,
     "battle_medal_disable": null,
-    "force_encounter": null
+    "force_encounter": {
+      "_comment": "The random-encounter step counter (script state + 0xC2B). The check at 0x080438C4 adds one per step on maps with encounters, rolls a 1-in-32 chance from step 17 to 31 and always starts a Robattle above 31, then resets it to 0. Writing 32 starts one on the next step on such a map (confirmed in Odoro Marsh). The game clears it itself.",
+      "address": "0x0300640B",
+      "kind": "u8",
+      "size": 1,
+      "values": [32]
+    }
   },
   "hints": {
     "_comment": "Further addresses found during calibration that the client does not use (yet). Never read by the client.",
@@ -100,7 +106,23 @@
     },
     "random_battle_id": {
       "address": "0x0300640A",
-      "note": "Battle id chosen from the map's encounter table (0x083BF070 in Metabee USA) when no scripted battle is pending (0x0300640D == 0). A candidate for force_encounter, not yet tested."
+      "note": "Battle id chosen from the map's encounter table (0x083BF070 in Metabee USA) when no scripted battle is pending (0x0300640D == 0)."
+    },
+    "battle_parts": {
+      "address": "0x030005D8",
+      "note": "Robattle part records, 0x18 bytes each, current armor at +0x11 (maximum at +4): own side from here, enemies from 0x030008D8, Medabots 0x100 apart. There is no global armor scale or medal switch, so Rusty Armor and Medal Nap would need client code that edits these records."
+    },
+    "battle_result": {
+      "address": "0x03005349",
+      "note": "1 = won, 2 = lost: written after Robattles and the arcade game, tested by script opcode 0x4F."
+    },
+    "player_tile": {
+      "address": "0x03006436",
+      "note": "Player tile x and y (bytes); pixel position at 0x03006432 / 0x03006434."
+    },
+    "menu_enabled": {
+      "address": "0x03006413",
+      "note": "Non-zero once the story allows the B-button menu (script state + 0xC33, set by opcode 0x5D)."
     }
   }
 }

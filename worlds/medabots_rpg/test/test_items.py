@@ -126,9 +126,9 @@ class TestPool(unittest.TestCase):
         raw["memory_map"]["verified"] = False
         self.assertEqual(len(supported_traps(load_world_data(DictDataSource(raw)))), 4)
 
-    def test_the_calibrated_memory_map_supports_money_drain_only(self):
-        """The trap-only addresses are not known yet, so only Money Drain can be applied."""
-        self.assertEqual([t.name for t in supported_traps(DATA)], ["Money Drain Trap"])
+    def test_the_calibrated_memory_map_supports_money_drain_and_ambush(self):
+        """The game has no armor scale or medal switch, so Rusty Armor and Medal Nap are dropped."""
+        self.assertEqual([t.name for t in supported_traps(DATA)], ["Money Drain Trap", "Ambush Trap"])
 
     def test_a_request_for_only_unsupported_traps_is_reported(self):
         data = verified_data(with_optional=False)

@@ -11,6 +11,7 @@ from worlds.medabots_rpg.test.support import SCRIPT_START, TEST_SCRIPT, build_ro
 
 DATA = get_world_data()
 BATTLES = next(v for v in DATA.rom.versions if v.id == "metabee_us").battles_offset
+RECORDS = BATTLES - 0x3000
 
 
 def battle_record(character, bots):
@@ -24,8 +25,11 @@ def battle_record(character, bots):
 def rom_with_content():
     # at script offset 0x1C: give medal 15, no-op, give medal 1; later a second 0x3C
     rom = bytearray(build_rom(scripts=bytes([0x3C, 0x0F, 0x00, 0x3C, 0x01, 0x00, 0x00, 0x3C, 0x1B])))
+    # the battle table holds pointers; every battle points at the same record here
     record = battle_record(0x13, [(0, 0, 0, 0, 1, 5), (120, 120, 120, 120, 0, 9)])
-    rom[BATTLES:BATTLES + 40] = record
+    rom[RECORDS:RECORDS + 40] = record
+    for index in range(245):
+        rom[BATTLES + 4 * index:BATTLES + 4 * index + 4] = (0x08000000 + RECORDS).to_bytes(4, "little")
     return bytes(rom)
 
 
