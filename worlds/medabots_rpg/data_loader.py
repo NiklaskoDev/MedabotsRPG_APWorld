@@ -131,11 +131,8 @@ class Area:
     parent: str | None
     map_prefixes: tuple[str, ...]
     index: int  # position in the provisional story order
-
-    @property
-    def clear_event(self) -> str:
-        """Name of the AP event item granted once this area has been completed."""
-        return f"{self.name} Cleared"
+    clear_event: str
+    """Name of the AP event item granted once this area has been completed (the goal event for the last area)."""
 
     def owns_map(self, map_name: str) -> bool:
         return any(map_name.startswith(prefix) for prefix in self.map_prefixes)
@@ -152,6 +149,10 @@ class LocationDef:
     missable: bool = False
     requires: Any = None
     detect: Mapping[str, Any] | None = None
+    """How the client notices the check, e.g. ``{"type": "flag", "table": "game_flags", "bit": 12}``."""
+    neutralize: Mapping[str, Any] | None = None
+    """Script bytes to overwrite so the vanilla reward is not given on top of the Archipelago item:
+    ``{"offset": "0x..", "expect": "3c0f", "replace": "..."}`` with ``offset`` relative to the script region."""
 
     @property
     def verified(self) -> bool:
@@ -181,6 +182,10 @@ class TableRef:
     size: int
     values: tuple[int, ...] | None = None
     """For state flags: the byte values that mean "yes" (for example the values of an 'overworld, idle' state)."""
+    layout: str | None = None
+    """For the medapart table: ``model_major`` (index = model * 4 + slot) or ``slot_major`` (slot * models + model)."""
+    maximum: int | None = None
+    """For numeric tables such as money: the largest value the game accepts."""
 
 
 @dataclass(frozen=True)
@@ -222,6 +227,8 @@ class WorldData:
     goal_event: str
     goal_detect: Mapping[str, Any] | None
     locations: tuple[LocationDef, ...]
+    location_categories: Mapping[str, str]
+    """Location category key -> human readable description."""
     items: tuple[ItemDef, ...]
     memory_map: MemoryMap
     rules: Mapping[str, Any]
@@ -316,8 +323,15 @@ def _parse_rom(raw: Mapping[str, Any]) -> RomInfo:
 
 
 def _parse_areas(raw: Mapping[str, Any]) -> tuple[Area, ...]:
+    last = len(raw["areas"]) - 1
     return tuple(
-        Area(name=a["name"], parent=a.get("from"), map_prefixes=tuple(a["map_prefixes"]), index=i)
+        Area(
+            name=a["name"],
+            parent=a.get("from"),
+            map_prefixes=tuple(a["map_prefixes"]),
+            index=i,
+            clear_event=raw["goal_event"] if i == last else f"{a['name']} Cleared",
+        )
         for i, a in enumerate(raw["areas"])
     )
 
@@ -325,9 +339,14 @@ def _parse_areas(raw: Mapping[str, Any]) -> tuple[Area, ...]:
 def _parse_table_ref(entry: Mapping[str, Any] | None, what: str) -> TableRef | None:
     if entry is None:
         return None
-    values = tuple(entry["values"]) if "values" in entry else None
-    return TableRef(address=_int(entry["address"], f"{what}.address"), kind=entry["kind"], size=entry["size"],
-                    values=values)
+    return TableRef(
+        address=_int(entry["address"], f"{what}.address"),
+        kind=entry["kind"],
+        size=entry["size"],
+        values=tuple(entry["values"]) if "values" in entry else None,
+        layout=entry.get("layout"),
+        maximum=entry.get("maximum"),
+    )
 
 
 def _parse_memory_map(raw: Mapping[str, Any]) -> MemoryMap:
@@ -410,6 +429,7 @@ def _build_locations(areas: tuple[Area, ...], raw: Mapping[str, Any]) -> tuple[L
             missable=entry.get("missable", False),
             requires=entry.get("requires"),
             detect=entry.get("detect"),
+            neutralize=entry.get("neutralize"),
         ))
     return tuple(result)
 
@@ -441,11 +461,23 @@ def rule_problems(expr: Any, known_names: set[str], known_groups: set[str], wher
     return [f"{where}: unknown rule keyword {key!r}"]
 
 
+def _neutralize_problems(loc: LocationDef) -> list[str]:
+    entry = loc.neutralize or {}
+    try:
+        _int(entry["offset"], "offset")
+        expect, replace = bytes.fromhex(entry["expect"]), bytes.fromhex(entry["replace"])
+    except (KeyError, ValueError, DataError) as exc:
+        return [f"location {loc.name!r}: invalid 'neutralize' entry ({exc})"]
+    if not expect or len(expect) != len(replace):
+        return [f"location {loc.name!r}: 'neutralize' expect and replace must be non-empty and the same length"]
+    return []
+
+
 def _duplicates(values: Iterable[Any]) -> list[Any]:
     return sorted((value for value, count in Counter(values).items() if count > 1), key=str)
 
 
-def validate(data: WorldData, location_categories: Iterable[str]) -> list[str]:
+def validate(data: WorldData) -> list[str]:
     """Return a list of human readable problems (empty when the data is consistent)."""
     problems: list[str] = []
     tables = data.tables
@@ -497,7 +529,7 @@ def validate(data: WorldData, location_categories: Iterable[str]) -> list[str]:
                      for name in excluded if name not in known]
 
     # Locations
-    categories = set(location_categories)
+    categories = set(data.location_categories)
     problems += [f"duplicate location id {dup}" for dup in _duplicates(loc.id for loc in data.locations)]
     problems += [f"duplicate location name {dup!r}" for dup in _duplicates(loc.name for loc in data.locations)]
     for loc in data.locations:
@@ -509,6 +541,8 @@ def validate(data: WorldData, location_categories: Iterable[str]) -> list[str]:
             problems.append(f"location {loc.name!r} has unknown status {loc.status!r}")
         if loc.verified and not loc.detect:
             problems.append(f"location {loc.name!r} is verified but has no 'detect' entry")
+        if loc.neutralize:
+            problems += _neutralize_problems(loc)
 
     names_for_rules = {item.name for item in data.items} | {area.clear_event for area in data.areas}
     names_for_rules.add(data.goal_event)
@@ -552,13 +586,14 @@ def load_world_data(source: DataSource | None = None) -> WorldData:
         goal_event=raw["regions"]["goal_event"],
         goal_detect=raw["regions"].get("goal_detect"),
         locations=_build_locations(areas, raw["locations"]),
+        location_categories=dict(raw["locations"]["categories"]),
         items=_build_items(tables, raw["items"]),
         memory_map=_parse_memory_map(raw["memory_map"]),
         rules=raw["rules"],
         pool_exclusions={"medals": tuple(exclusions.get("medals", ())), "bots": tuple(exclusions.get("bots", ()))},
         content_hash=hashlib.sha256(b"".join(raw_bytes[name] for name in DATA_FILES)).hexdigest(),
     )
-    problems = validate(data, raw["locations"]["categories"])
+    problems = validate(data)
     if problems:
         raise DataError("Medabots RPG game data is inconsistent:\n  - " + "\n  - ".join(problems))
     return data

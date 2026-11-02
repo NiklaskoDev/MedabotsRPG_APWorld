@@ -12,4 +12,5 @@ ignore = [
 ]
 
 [lint.isort]
-known-first-party = ["worlds"]
+# Archipelago core modules are third-party code from this project's point of view.
+known-third-party = ["BaseClasses", "Options", "NetUtils", "Utils", "settings", "worlds", "rule_builder"]
