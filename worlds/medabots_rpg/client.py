@@ -156,7 +156,8 @@ class MedabotsRPGClient(BizHawkClient):
         return Snapshot(memory_map, {path: chunk for (path, _), chunk in zip(tables, chunks, strict=True)})
 
     async def _report_locations(self, ctx: BizHawkClientContext, snapshot: Snapshot) -> None:
-        found = detect_checked_locations(self.data, snapshot, ctx.missing_locations)
+        # The server only learns about a check from us, so also skip what we already sent while it catches up.
+        found = detect_checked_locations(self.data, snapshot, ctx.missing_locations) - ctx.locations_checked
         if found:
             ctx.locations_checked |= found
             await ctx.send_msgs([{"cmd": "LocationChecks", "locations": sorted(found)}])
