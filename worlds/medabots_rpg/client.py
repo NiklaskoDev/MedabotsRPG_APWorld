@@ -35,6 +35,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("Client")
 
+_WRONG_MULTIWORLD = ("This ROM was patched for a different multiworld than the one on this server. Connect to the "
+                     "right server, or patch your ROM again with the matching .apmedabots file.")
+
 REPAIR_INTERVAL_SECONDS = 5.0
 """How often ownership of every received part and medal is re-asserted (this repairs loaded older saves)."""
 
@@ -108,8 +111,7 @@ class MedabotsRPGClient(BizHawkClient):
         if self.identity is None:
             return
         if cmd == "RoomInfo" and ApIdentity.digest_seed(args["seed_name"]) != self.identity.seed_digest:
-            self._block("This ROM was patched for a different multiworld than the one on this server. Connect to the "
-                        "right server, or patch your ROM again with the matching .apmedabots file.")
+            self._block(_WRONG_MULTIWORLD)
         elif cmd == "Connected":
             self._check_slot_data(ctx, args.get("slot_data") or {})
             if self.blocked is None:
@@ -122,7 +124,12 @@ class MedabotsRPGClient(BizHawkClient):
             self.counter_loaded = True
 
     def _check_slot_data(self, ctx: BizHawkClientContext, slot_data: dict) -> None:
-        if slot_data.get("data_hash") != self.data.content_hash:
+        # The seed is checked here as well as on RoomInfo: the server's RoomInfo may arrive before this client has
+        # recognised the ROM, but the slot data always arrives afterwards.
+        if self.identity is not None and "seed_name" in slot_data and \
+                ApIdentity.digest_seed(slot_data["seed_name"]) != self.identity.seed_digest:
+            self._block(_WRONG_MULTIWORLD)
+        elif slot_data.get("data_hash") != self.data.content_hash:
             self._block(f"This seed was generated with a different version of the Medabots RPG world "
                         f"({slot_data.get('world_version', 'unknown')}) than the one installed. Install the matching "
                         "version.")

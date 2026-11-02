@@ -162,6 +162,12 @@ class TestServerPackages(ClientTestCase):
             self.client.on_package(make_context(), "RoomInfo", {"seed_name": "someone-elses-seed"})
         self.assertIn("different multiworld", self.client.blocked)
 
+    async def test_a_foreign_seed_is_caught_even_if_room_info_came_first(self):
+        """RoomInfo can arrive before the ROM is recognised, so the slot data must be checked as well."""
+        with self.assertLogs("Client", "ERROR"):
+            self.client.on_package(make_context(), "Connected", {"slot_data": {**SLOT_DATA, "seed_name": "other"}})
+        self.assertIn("different multiworld", self.client.blocked)
+
     async def test_seed_from_another_world_version_stops_the_client(self):
         with self.assertLogs("Client", "ERROR"):
             self.client.on_package(make_context(), "Connected", {"slot_data": {**SLOT_DATA, "data_hash": "0" * 64,

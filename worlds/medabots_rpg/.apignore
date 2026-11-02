@@ -1,0 +1,2 @@
+# Tests are for developers only and do not need to ship with the world.
+test/

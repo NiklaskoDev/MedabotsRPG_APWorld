@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["v*"] # tag pushes are handled by the Release workflow
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: tools/dev.sh lint
+
+  test:
+    name: Test (Archipelago ${{ matrix.ap }}, Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    # Archipelago's development branch is an early warning, not a gate.
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { ap: "0.6.8", python: "3.11", experimental: false }
+          - { ap: "0.6.8", python: "3.12", experimental: false }
+          - { ap: "0.6.8", python: "3.13", experimental: false }
+          - { ap: "main", python: "3.13", experimental: true }
+    env:
+      AP_REF: ${{ matrix.ap }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: tools/dev.sh test
+
+  package:
+    name: Build the .apworld
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: tools/dev.sh build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: medabots_rpg-apworld
+          path: dist/medabots_rpg.apworld
+          if-no-files-found: error

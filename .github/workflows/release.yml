@@ -1,0 +1,55 @@
+name: Release
+
+# Pushing a tag such as v0.1.0 (or v0.2.0-rc.1) builds the APWorld and publishes a GitHub release.
+# The tag must equal v<world_version> from worlds/medabots_rpg/archipelago.json, and CHANGELOG.md must have a section
+# for that version. Versions below 1.0.0, and tags with a suffix, are published as pre-releases.
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+permissions:
+  contents: write # needed to create the release
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Check the tag and prepare the release notes
+        id: release
+        run: python tools/release_notes.py --tag "$GITHUB_REF_NAME" --notes-out release_notes.md | tee -a "$GITHUB_OUTPUT"
+
+      - name: Lint
+        run: tools/dev.sh lint
+
+      - name: Test
+        run: tools/dev.sh test
+
+      - name: Build the APWorld
+        run: |
+          tools/dev.sh build
+          cd dist
+          sha256sum medabots_rpg.apworld | tee SHA256SUMS.txt
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+        run: |
+          flags=()
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" dist/medabots_rpg.apworld dist/SHA256SUMS.txt \
+            --title "Medabots RPG $GITHUB_REF_NAME" \
+            --notes-file release_notes.md \
+            --verify-tag \
+            "${flags[@]}"
