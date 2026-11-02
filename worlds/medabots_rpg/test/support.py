@@ -43,7 +43,8 @@ SHAPED_PARTS = RAM_BASE + 0x1800
 SHAPED_MEDALS = RAM_BASE + 0x1C00
 SHAPED_MONEY = RAM_BASE + 0x2400
 SHAPED_SAFE = RAM_BASE + 0x2410
-SHAPED_IN_BATTLE = RAM_BASE + 0x2411
+SHAPED_MODE = RAM_BASE + 0x2411
+SHAPED_SCENE = RAM_BASE + 0x2412
 STORY_COMPLETE_EVENT = 2070
 
 
@@ -101,8 +102,9 @@ def shaped_data() -> WorldData:
     for name, address in (("game_flags", SHAPED_FLAGS), ("parts_owned", SHAPED_PARTS),
                           ("medals_owned", SHAPED_MEDALS), ("money", SHAPED_MONEY)):
         tables[name]["address"] = hex(address)
-    raw["memory_map"]["state"]["safe_to_deliver"]["address"] = hex(SHAPED_SAFE)
-    raw["memory_map"]["state"]["in_battle"]["address"] = hex(SHAPED_IN_BATTLE)
+    state = raw["memory_map"]["state"]
+    state["safe_to_deliver"][0]["address"], state["safe_to_deliver"][1]["address"] = hex(SHAPED_SAFE), hex(SHAPED_MODE)
+    state["in_battle"][0]["address"], state["in_battle"][1]["address"] = hex(SHAPED_MODE), hex(SHAPED_SCENE)
     raw["regions"]["goal_detect"] = {"type": "event", "flag": STORY_COMPLETE_EVENT}
     for entry in raw["locations"]["locations"]:
         if entry["status"] != "absent":

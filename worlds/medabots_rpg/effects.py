@@ -48,12 +48,16 @@ _TRAP_TABLE = {
 # Snapshot
 # ---------------------------------------------------------------------------------------------------------------------
 def readable_tables(memory_map: MemoryMap) -> list[tuple[str, TableRef]]:
-    """Every table and state flag of the memory map that is known, with its dotted path."""
+    """Every table and state flag of the memory map that is known, with its dotted path.
+
+    A state flag made of several conditions contributes one entry per condition (``state.name``, ``state.name+1``…).
+    """
     found: list[tuple[str, TableRef]] = []
     for section in ("tables", "state", "optional_tables"):
         for name, ref in getattr(memory_map, section).items():
             if ref is not None:
                 found.append((f"{section}.{name}", ref))
+                found += [(f"{section}.{name}+{i}", extra) for i, extra in enumerate(ref.also, 1)]
     return found
 
 
@@ -88,11 +92,17 @@ class Snapshot:
         return False
 
     def state_is_set(self, name: str) -> bool | None:
-        """Whether a state flag is on, or ``None`` when its address is not known."""
-        ref, raw = self.memory_map.state.get(name), self.raw.get(f"state.{name}")
-        if ref is None or not raw:
+        """Whether a state flag is on (every one of its conditions), or ``None`` when its address is not known."""
+        ref = self.memory_map.state.get(name)
+        if ref is None:
             return None
-        return raw[0] in ref.values if ref.values else bool(raw[0])
+        result = True
+        for i, condition in enumerate((ref, *ref.also)):
+            raw = self.raw.get(f"state.{name}" + (f"+{i}" if i else ""))
+            if not raw:
+                return None
+            result = result and (raw[0] in condition.values if condition.values else bool(raw[0]))
+        return result
 
 
 def event_flag_bit(flag: int) -> int:

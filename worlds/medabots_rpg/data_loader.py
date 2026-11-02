@@ -13,7 +13,7 @@ import json
 import pkgutil
 from collections import Counter
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cached_property, lru_cache
 from typing import Any, Protocol
 
@@ -200,6 +200,8 @@ class TableRef:
     """For ``bytes`` tables: bytes per entry. The first byte of an entry is its count (non-zero means owned)."""
     record_size: int | None = None
     """For ``records`` tables (the medal case): bytes per record."""
+    also: tuple[TableRef, ...] = ()
+    """For state flags: further conditions that must hold as well (a state entry given as a list in the JSON)."""
 
 
 @dataclass(frozen=True)
@@ -368,6 +370,16 @@ def _parse_table_ref(entry: Mapping[str, Any] | None, what: str) -> TableRef | N
     )
 
 
+def _parse_state_ref(entry: Mapping[str, Any] | list | None, what: str) -> TableRef | None:
+    """A state flag: one table ref, or a list of them that must all hold (the first one carries the others)."""
+    if not isinstance(entry, list):
+        return _parse_table_ref(entry, what)
+    if not entry:
+        raise DataError(f"{what}: an empty list of conditions")
+    conditions = [_parse_table_ref(part, f"{what}[{i}]") for i, part in enumerate(entry)]
+    return replace(conditions[0], also=tuple(conditions[1:]))
+
+
 def _parse_memory_map(raw: Mapping[str, Any]) -> MemoryMap:
     ap_block = raw.get("ap_block")
     return MemoryMap(
@@ -376,7 +388,7 @@ def _parse_memory_map(raw: Mapping[str, Any]) -> MemoryMap:
         ap_block_offset=_int(ap_block["rom_offset"], "ap_block.rom_offset") if ap_block else None,
         ap_block_size=ap_block["size"] if ap_block else None,
         tables={k: _parse_table_ref(v, f"tables.{k}") for k, v in raw["tables"].items()},
-        state={k: _parse_table_ref(v, f"state.{k}") for k, v in raw["state"].items()},
+        state={k: _parse_state_ref(v, f"state.{k}") for k, v in raw["state"].items()},
         optional_tables={k: _parse_table_ref(v, f"optional_tables.{k}")
                          for k, v in raw["optional_tables"].items()},
     )
@@ -522,16 +534,15 @@ def detect_problems(detect: Mapping[str, Any] | None, memory_map: MemoryMap, whe
 def _memory_map_problems(memory_map: MemoryMap) -> list[str]:
     problems = []
     for section in ("tables", "state", "optional_tables"):
-        for name, ref in getattr(memory_map, section).items():
-            if ref is None:
-                continue
-            where = f"memory map {section}.{name}"
-            if ref.kind not in ("bitfield", "bytes", "records", "u8", "u16", "u32"):
-                problems.append(f"{where}: unknown kind {ref.kind!r}")
-            if ref.stride < 1 or ref.size % ref.stride:
-                problems.append(f"{where}: size must be a multiple of a stride of at least 1")
-            if ref.kind == "records" and (not ref.record_size or ref.size % ref.record_size):
-                problems.append(f"{where}: a records table needs a record_size that divides its size")
+        for name, entry in getattr(memory_map, section).items():
+            for ref in (entry, *entry.also) if entry is not None else ():
+                where = f"memory map {section}.{name}"
+                if ref.kind not in ("bitfield", "bytes", "records", "u8", "u16", "u32"):
+                    problems.append(f"{where}: unknown kind {ref.kind!r}")
+                if ref.stride < 1 or ref.size % ref.stride:
+                    problems.append(f"{where}: size must be a multiple of a stride of at least 1")
+                if ref.kind == "records" and (not ref.record_size or ref.size % ref.record_size):
+                    problems.append(f"{where}: a records table needs a record_size that divides its size")
     return problems
 
 

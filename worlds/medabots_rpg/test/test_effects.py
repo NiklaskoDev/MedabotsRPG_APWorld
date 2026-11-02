@@ -30,11 +30,12 @@ from .support import (
     PARTS,
     SAFE,
     SHAPED_FLAGS,
-    SHAPED_IN_BATTLE,
     SHAPED_MEDALS,
+    SHAPED_MODE,
     SHAPED_MONEY,
     SHAPED_PARTS,
     SHAPED_SAFE,
+    SHAPED_SCENE,
     STORY_COMPLETE_EVENT,
     FakeMemory,
     medal_table,
@@ -316,7 +317,9 @@ class TestCalibratedShapes(unittest.TestCase):
     data = shaped_data()
 
     def harness(self):
-        return Harness(self.data, medal_table=medal_table())
+        harness = Harness(self.data, medal_table=medal_table())
+        harness.memory.set_byte(SHAPED_MODE, 1)  # the field
+        return harness
 
     def snapshot(self, memory):
         return snapshot_of(self.data, memory)
@@ -395,12 +398,24 @@ class TestCalibratedShapes(unittest.TestCase):
 
     def test_nothing_is_delivered_during_a_battle(self):
         harness = self.harness()
-        harness.memory.set_byte(SHAPED_IN_BATTLE, 1)
+        harness.memory.set_byte(SHAPED_MODE, 0)
+        harness.memory.set_byte(SHAPED_SCENE, 7)
+        snapshot = snapshot_of(self.data, harness.memory)
+        self.assertEqual((snapshot.state_is_set("in_battle"), snapshot.state_is_set("safe_to_deliver")), (True, False))
         harness.step(harness.receive("Money Pouch (Small)"))
         self.assertEqual((harness.memory.u32(SHAPED_MONEY), harness.state.applied_index), (0, 0))
-        harness.memory.set_byte(SHAPED_IN_BATTLE, 0)
+        harness.memory.set_byte(SHAPED_MODE, 1)
         harness.step(harness.receive("Money Pouch (Small)"))
         self.assertEqual(harness.memory.u32(SHAPED_MONEY), 200)
+
+    def test_the_menu_and_the_title_screen_are_neither_safe_nor_a_battle(self):
+        harness = self.harness()
+        for mode, scene in ((0, 1), (0, 2), (3, 0)):  # B menu, Medawatch screen, title screen
+            harness.memory.set_byte(SHAPED_MODE, mode)
+            harness.memory.set_byte(SHAPED_SCENE, scene)
+            snapshot = snapshot_of(self.data, harness.memory)
+            self.assertEqual((snapshot.state_is_set("safe_to_deliver"), snapshot.state_is_set("in_battle")),
+                             (False, False), (mode, scene))
 
     def test_nothing_is_delivered_while_a_script_runs(self):
         harness = self.harness()

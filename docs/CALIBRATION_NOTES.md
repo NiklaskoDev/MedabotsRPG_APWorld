@@ -107,3 +107,27 @@ Useful for trying a reward without playing to it (all addresses Metabee USA, sam
 4. **Story order** in `regions.json` is still the provisional one.
 5. **More locations.** `analyze_rom.py` lists 180 reward scripts; the world uses 22 rows of which 8 are verified.
 6. **Step 5**, the two-player play-test.
+
+## Second pass (same day): open items
+
+* **State flags corrected.** `0x03000440` is *not* "in battle": it stays 1 after the first battle. The game's main mode
+  `0x0300178C` is 1 in the field, 0 in Robattles and the B-button menu, 2 during scene switches and some menus, 3 at
+  the title/boot screen. `safe_to_deliver` is now two conditions (script engine idle **and** mode 1); without the
+  second one the client would have delivered at the title screen, where no script runs. `in_battle` is mode 0 **and**
+  mode-0 sub-scene (`0x03002B8C`) in {3, 5, 6, 7, 8, 9}; the menu uses 1 and 2. Checked live with the world's own code
+  while walking, in a chest dialogue, in and after a won Robattle, in the B menu, the Medawatch screen and at the real
+  title screen. State entries may now be a list of conditions that must all hold.
+* **The menu** opens with **B** (not Start) once `0x03006413` (script state + `0xC33`, set by opcode `0x5D`) is non-zero.
+  It shows money as dollars and cents: the stored money is in cents, so the client's money pouches (200/1000/5000) are
+  only $2/$10/$50 while chests give $5-$50. Worth rebalancing.
+* **Story order** comes from the game's chapter byte (`0x03005FDF`, set by opcode `0x6B`; map objects carry a chapter
+  mask): Riverview (0-1), Mt. Odori/Odoro Marsh (2), Medabot Island, Haunted House and a first Castle visit (3),
+  Medaropolis and Rosewood (4), Rubberobo and a first Fort Fiyun visit (5), Kodine Kingdom (6), Fort Fiyun (7), the
+  Castle finale with Mega-Emperor (event 916) and Babyblu (8), then chapter 9 (Babyblu rematch, most of Ninja Park),
+  set by Ikki's-room trigger 157 after the chapter-8 return home. By first visit this matches `regions.json`.
+* **Goal (not yet in the data).** Best candidate: the chapter byte reaching 9, i.e. byte `0x7FF` of `game_flags`. The
+  credits are scene 20 (reached from the battle-end code through scenes 25 and 12) but the exact trigger was not traced.
+* **Winning battles for tests.** Battle part records are 0x18 bytes, current armor at +0x11: own side from `0x030005D8`,
+  enemies from `0x030008D8`, bots 0x100 apart. Keeping enemy armor at 1 and own at 255 wins any Robattle.
+* **Analyzer bug.** `battles_offset` is a table of pointers to the 40-byte records (which follow the encounter table);
+  `analyze_rom.py` still decodes the pointers as records.

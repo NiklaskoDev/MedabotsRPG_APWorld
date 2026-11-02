@@ -38,19 +38,38 @@
     }
   },
   "state": {
-    "safe_to_deliver": {
-      "_comment": "The event-script engine's 'running' byte (script state base 0x030057E0 + 0xC88): 0 only while the player walks around freely; 1 during dialogue, cutscenes, shops, chests, scripted battles and the opening. The client additionally never delivers while in_battle is set, which covers random encounters. Not yet observed: the start menu (it could not be opened at the point of the game reached during calibration).",
-      "address": "0x03006468",
-      "kind": "u8",
-      "size": 1,
-      "values": [0]
-    },
-    "in_battle": {
-      "_comment": "First byte of the game-mode block at 0x03000440: 1 from the 'get ready to Robattle' screen to the end of the battle, 0 in the field, in dialogue and in the opening.",
-      "address": "0x03000440",
-      "kind": "u8",
-      "size": 1
-    }
+    "safe_to_deliver": [
+      {
+        "_comment": "Both conditions must hold. First: the event-script engine's 'running' byte (script state base 0x030057E0 + 0xC88) is 0, which rules out dialogue, cutscenes, shops, chests, scripted battles and the opening.",
+        "address": "0x03006468",
+        "kind": "u8",
+        "size": 1,
+        "values": [0]
+      },
+      {
+        "_comment": "Second: the game's main mode (0x0300178C) is 1, the field. It is 0 in a Robattle, 3 at the title and boot screens and 2 while the game switches scenes; the scene code at 0x08047878 and the battle code write it. Without this the client could add money at the title screen, which loading a save would then wipe.",
+        "address": "0x0300178C",
+        "kind": "u8",
+        "size": 1,
+        "values": [1]
+      }
+    ],
+    "in_battle": [
+      {
+        "_comment": "Both conditions must hold. The main mode (0x0300178C) is 0 from the 'get ready to Robattle' screen to the end of a battle, scripted or random, and 1 again afterwards (traced through a won battle). Mode 0 also hosts the B-button menu, hence the second condition. The first byte of the mode block at 0x03000440 is not usable: it stays 1 after the first battle.",
+        "address": "0x0300178C",
+        "kind": "u8",
+        "size": 1,
+        "values": [0]
+      },
+      {
+        "_comment": "The mode-0 sub-scene (0x03002B8C, handlers at 0x083AC128): a battle runs through 6 (setup), 3, 7, 8, 9 (turns) and back to 6; 5 holds the battle-end code. The menu uses 1 (main menu) and 2 (Medawatch).",
+        "address": "0x03002B8C",
+        "kind": "u8",
+        "size": 1,
+        "values": [3, 5, 6, 7, 8, 9]
+      }
+    ]
   },
   "optional_tables": {
     "battle_armor_scale": null,
