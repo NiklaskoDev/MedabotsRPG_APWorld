@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from .constants import KIND_CONSUMABLE, KIND_MEDAL, KIND_PART, KIND_TRAP, PART_SLOTS
 from .data_loader import ItemDef, MemoryMap, TableRef, WorldData
 
+_NUMERIC_KINDS = ("u8", "u16", "u32")
 MAX_DELIVERIES_PER_TICK = 4
 TRAP_TIMEOUT_SECONDS = 300
 """A trap's effect is always lifted after this long, even if the game never reports the end of a battle."""
@@ -74,15 +75,20 @@ class _Workspace:
         return self.memory_map.resolve(path) if path in self.buffers else None
 
     def changes(self) -> tuple[list[tuple[int, bytes]], list[tuple[int, bytes]]]:
-        """(writes, guards): for each changed table the smallest span that differs, and the bytes it held before."""
+        """(writes, guards) for every changed table, and the bytes each write expects to replace.
+
+        Bitfields and byte arrays write only the span that differs. Numbers (money, trap values) are always written
+        and guarded as a whole, so a half-updated value can never be produced.
+        """
         writes, guards = [], []
         for path, new in self.buffers.items():
             old = self.original[path]
             changed = [i for i, (a, b) in enumerate(zip(old, new, strict=True)) if a != b]
             if not changed:
                 continue
-            first, last = changed[0], changed[-1] + 1
-            address = self.memory_map.resolve(path).address + first
+            ref = self.memory_map.resolve(path)
+            first, last = (0, len(new)) if ref.kind in _NUMERIC_KINDS else (changed[0], changed[-1] + 1)
+            address = ref.address + first
             writes.append((address, bytes(new[first:last])))
             guards.append((address, bytes(old[first:last])))
         return writes, guards
@@ -186,10 +192,10 @@ class StepResult:
 
 def _grant(data: WorldData, ws: _Workspace, item: ItemDef) -> bool:
     if item.kind == KIND_PART:
-        ref = data.memory_map.table("parts_owned")
+        ref = data.memory_map.tables.get("parts_owned")
         return ref is not None and ws.set_ownership(
             "tables.parts_owned", part_index(ref, data, item.data["model"], item.data["slot"]))
-    return data.memory_map.table("medals_owned") is not None and ws.set_ownership(
+    return data.memory_map.tables.get("medals_owned") is not None and ws.set_ownership(
         "tables.medals_owned", item.data["medal_id"])
 
 
