@@ -34,6 +34,15 @@ In order of how much each can still go wrong:
 Not tested, because it does not exist yet: Rusty Armor and Medal Nap (seeds drop them), DeathLink, enemy shuffling,
 starting-Medabot choice.
 
+## Findings so far
+
+| Finding | Status |
+|---|---|
+| **P0.** Choosing New Game fills the game's RAM, the event flags included, with `0xFF`; the client read that as all 11 checks made and the story complete (Metabee USA and Rokusho USA; the Europe versions show the same RAM). | Fixed in code with tests: flags are read only in the field and never from an all-`0xFF` table. Retest **SV-8** and **SV-9** on all four versions. |
+| **P1.** After connecting a ROM to another seed's server once, the client stayed stopped on the right server too, until it was restarted. | Fixed in code with tests: a stop belongs to one connection. Retest **CN-8**. |
+
+Seeds and patches made before the fix are refused by the fixed client (the data hash changed); generate and patch again.
+
 ## Setup
 
 **Software.** Archipelago 0.6.8, BizHawk 2.9.1 (the version calibration used), this repository's
@@ -157,6 +166,7 @@ if time allows.
 | CN-5 | P0 | Load the patched ROM, run `connector_bizhawk_generic.lua`. | The client names Medabots RPG and the correct slot; no unverified-build warning. | |
 | CN-6 | P1 | Load the original, unpatched ROM. | "This is an unpatched Medabots ROM…" once, no spam, nothing written. | |
 | CN-7 | P1 | Connect `Bee`'s ROM to a server hosting a different generation. | The client stops with the "different multiworld" message and delivers nothing. | |
+| CN-8 | P0 | After CN-7, without restarting the client or BizHawk, disconnect and connect to the right server. | The client joins, resumes at once and says so in its log; open a chest and send an item: the check is sent and the item arrives. | |
 
 ## 4. Delivery in every state
 
@@ -206,6 +216,8 @@ seconds in each state before leaving it.
 | SV-5 | P1 | Stop and restart the server from its save file. | Checks and the delivery counter persist; no duplicates. | |
 | SV-6 | P0 | Play with BizHawk open but the client closed: open a chest, receive nothing. Items are sent to you meanwhile. Start the client. | The check is sent once, the waiting items arrive once. | |
 | SV-7 | P1 | Soft reset mid-session. | The client survives and keeps delivering. | |
+| SV-8 | P0 | With the client connected and a server that has not seen any checks, choose **New Game** from the title menu, once with no save file and once with one, and play the first ten minutes. Watch the server and the client log while you are on the title menu, at the confirmation prompt and on the first screens. Repeat on all four versions. | No check and no goal are sent at any point. The first real check (once you reach one) is still sent. | |
+| SV-9 | P0 | **Continue** an existing save with the client connected, then go back to the title and choose New Game. | Continue behaves as before: checks already made are not sent twice. The New Game afterwards sends nothing, and checks made in the old game are not undone. | |
 
 ## 7. Locations
 

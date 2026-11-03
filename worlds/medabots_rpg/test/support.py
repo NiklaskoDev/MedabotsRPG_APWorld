@@ -30,6 +30,7 @@ MEDALS = RAM_BASE + 0x200
 MONEY = RAM_BASE + 0x300
 SAFE = RAM_BASE + 0x400
 IN_BATTLE = RAM_BASE + 0x401
+IN_FIELD = RAM_BASE + 0x402
 ARMOR_SCALE = RAM_BASE + 0x410
 MEDAL_DISABLE = RAM_BASE + 0x411
 FORCE_ENCOUNTER = RAM_BASE + 0x412
@@ -90,6 +91,7 @@ def verified_data(parts_layout: str = "model_major", with_optional: bool = True)
         state={
             "safe_to_deliver": ref(SAFE, "bytes", 1, values=[0]),
             "in_battle": ref(IN_BATTLE, "bytes", 1),
+            "in_field": ref(IN_FIELD, "bytes", 1, values=[1]),
         },
         optional_tables={
             "battle_armor_scale": ref(ARMOR_SCALE, "u8", 1) if with_optional else None,
@@ -119,6 +121,7 @@ def shaped_data() -> WorldData:
     state = raw["memory_map"]["state"]
     state["safe_to_deliver"][0]["address"], state["safe_to_deliver"][1]["address"] = hex(SHAPED_SAFE), hex(SHAPED_MODE)
     state["in_battle"][0]["address"], state["in_battle"][1]["address"] = hex(SHAPED_MODE), hex(SHAPED_SCENE)
+    state["in_field"]["address"] = hex(SHAPED_MODE)
     raw["memory_map"]["optional_tables"]["force_encounter"]["address"] = hex(SHAPED_ENCOUNTER)
     raw["regions"]["goal_status"] = "verified"
     for entry in raw["locations"]["locations"]:
@@ -136,6 +139,7 @@ class FakeMemory:
         self.rom = bytearray(rom)
         self.writes: list[tuple[int, bytes]] = []
         self.fail_next_guard = False
+        self.ram[IN_FIELD - RAM_BASE] = 1  # the invented layout starts out in the field; tests move it away from there
 
     def _domain(self, name: str) -> tuple[bytearray, int]:
         return (self.ram, RAM_BASE) if name == SYSTEM_BUS else (self.rom, 0)

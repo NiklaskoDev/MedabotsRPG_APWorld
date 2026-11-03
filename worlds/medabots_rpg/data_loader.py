@@ -28,6 +28,7 @@ from .constants import (
     KIND_TRAP,
     PART_SLOT_GROUPS,
     PART_SLOTS,
+    REQUIRED_STATES,
     STATUS_ABSENT,
     STATUS_CANDIDATE,
     STATUS_VERIFIED,
@@ -230,8 +231,9 @@ class MemoryMap:
     @property
     def missing(self) -> list[str]:
         """Dotted paths of every *required* table or state entry that is still unknown."""
+        states = list(dict.fromkeys([*REQUIRED_STATES, *self.state]))  # a required state may be missing altogether
         return [f"tables.{k}" for k, v in self.tables.items() if v is None] + [
-            f"state.{k}" for k, v in self.state.items() if v is None
+            f"state.{k}" for k in states if self.state.get(k) is None
         ]
 
 

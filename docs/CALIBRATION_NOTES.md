@@ -162,3 +162,24 @@ The goal and the money pouches, listed here before, were done in the third pass.
 * **Money pouches** now add **$10, $50 and $200** (1000, 5000 and 20000 cents; they were $2, $10 and $50). With the
   weights 5:3:1 a pouch is worth about $44 on average, roughly one chest, and the large pouch matches the game's best
   money prize.
+
+## Play-test findings
+
+Found while starting the play-test ([PLAYTEST.md](PLAYTEST.md)); both were fixed in code and covered by tests, and both
+still have to be confirmed in BizHawk (cases SV-8 and CN-8).
+
+* **New Game wiped the flags and the client read them as progress (P0).** Choosing New Game fills the game's RAM with
+  `0xFF`, the event flags included. It happens at the confirmation prompt, or already on the title menu when there is no
+  save. The client read check and goal flags on every tick, so it reported all 11 checks and the goal at once (reproduced
+  three times on Metabee USA and Rokusho USA; the Europe versions show the same RAM, the client was kept offline there).
+  Continue was not affected. Check and goal flags are now read only while the main mode `0x0300178C` is 1, the field (new
+  state `in_field`, required in a verified map), and never from a flag table made only of `0xFF`. Each condition stops the
+  wipe on its own; both are kept. Delivery was already safe: its two conditions need the script engine byte to be 0 and
+  the mode to be 1.
+* **One wrong server stopped the client for good (P1).** Connecting a ROM to another seed's server correctly showed
+  the "different multiworld" error, but the stop was only cleared when the ROM was validated again, so connecting to the
+  right server afterwards joined and then neither detected nor delivered anything until the client was restarted. A stop
+  now belongs to one connection: every `RoomInfo` clears it and the seed and the slot data are checked again.
+
+These changed `memory_map.json`, so seeds and patches made before the fix carry a different data hash and are refused by
+the fixed client: generate and patch them again.

@@ -69,7 +69,14 @@
         "size": 1,
         "values": [3, 5, 6, 7, 8, 9]
       }
-    ]
+    ],
+    "in_field": {
+      "_comment": "The game's main mode (0x0300178C) is 1 in the field. The client reads check and goal flags only here, because choosing New Game fills the game's RAM with 0xFF (the event flags too) from the title menu on, which would otherwise look like every check made and the story finished. The mode is 3 at the title and boot screens, 0xFF after the fill, 2 between scenes and 0 in a Robattle or the B menu. Found in play-testing, see docs/CALIBRATION_NOTES.md.",
+      "address": "0x0300178C",
+      "kind": "u8",
+      "size": 1,
+      "values": [1]
+    }
   },
   "optional_tables": {
     "battle_armor_scale": null,

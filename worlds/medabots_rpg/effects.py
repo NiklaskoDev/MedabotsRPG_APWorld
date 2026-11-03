@@ -27,6 +27,7 @@ from .constants import (
     KIND_TRAP,
     MEDAL_TABLE_ENTRY_SIZE,
     PART_SLOTS,
+    WIPED_FLAG_BYTE,
 )
 from .data_loader import ItemDef, MemoryMap, TableRef, WorldData
 
@@ -93,6 +94,19 @@ class Snapshot:
             raw = self.raw.get(f"tables.{detect['table']}")
             return raw is not None and detect["offset"] < len(raw) and raw[detect["offset"]] >= detect["value"]
         return False
+
+    def game_is_running(self) -> bool:
+        """Whether the event flags can be believed: the game is in the field and has not just wiped its memory.
+
+        Choosing New Game fills the game's RAM, event flags included, with 0xFF, from the title menu on, which reads as
+        every check made and the story finished. Check and goal flags are therefore read only when the main mode says
+        the field (an unknown mode is not held against the game) and the flag table is not all 0xFF. Each condition
+        alone stops the wipe that was observed; both are kept so that neither has to be exactly right on its own.
+        """
+        if self.state_is_set("in_field") is False:
+            return False
+        flags = self.raw.get("tables.game_flags")
+        return not (flags and all(byte == WIPED_FLAG_BYTE for byte in flags))
 
     def state_is_set(self, name: str) -> bool | None:
         """Whether a state flag is on (every one of its conditions), or ``None`` when its address is not known."""
@@ -223,14 +237,16 @@ def part_index(ref: TableRef, data: WorldData, model: int, slot: int) -> int:
 # Locations and goal
 # ---------------------------------------------------------------------------------------------------------------------
 def detect_checked_locations(data: WorldData, snapshot: Snapshot, wanted: Iterable[int]) -> set[int]:
-    """IDs among ``wanted`` whose check is visible in the snapshot."""
+    """IDs among ``wanted`` whose check is visible in the snapshot (none while the game's memory cannot be believed)."""
+    if not snapshot.game_is_running():
+        return set()
     wanted = set(wanted)
     return {location.id for location in data.locations
             if location.id in wanted and snapshot.detected(location.detect)}
 
 
 def story_complete(data: WorldData, snapshot: Snapshot) -> bool:
-    return snapshot.detected(data.goal_detect)
+    return snapshot.game_is_running() and snapshot.detected(data.goal_detect)
 
 
 def collection_goal_reached(data: WorldData, received: Sequence[str], goal: str, medals: int, parts: int) -> bool:

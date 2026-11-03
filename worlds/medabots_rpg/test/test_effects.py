@@ -30,6 +30,7 @@ from .support import (
     MEDIUM_POUCH,
     MONEY,
     PARTS,
+    RAM_BASE,
     SAFE,
     SHAPED_ENCOUNTER,
     SHAPED_FLAGS,
@@ -327,6 +328,12 @@ class TestCalibratedShapes(unittest.TestCase):
     def snapshot(self, memory):
         return snapshot_of(self.data, memory)
 
+    def field_memory(self) -> FakeMemory:
+        """A fake game in the field: the main mode is 1, the only place checks and the goal are read."""
+        memory = FakeMemory()
+        memory.set_byte(SHAPED_MODE, 1)
+        return memory
+
     def set_event(self, memory, flag, value=0, done=True):
         nibble = (8 if done else 0) | value
         address = SHAPED_FLAGS + (flag >> 1)
@@ -338,7 +345,7 @@ class TestCalibratedShapes(unittest.TestCase):
         self.assertEqual(event_flag_bit(1609), 804 * 8 + 3)
 
     def test_locations_are_found_by_their_event_flag(self):
-        memory = FakeMemory()
+        memory = self.field_memory()
         wanted = {loc.id for loc in self.data.locations}
         self.set_event(memory, 1610)
         self.assertEqual(detect_checked_locations(self.data, self.snapshot(memory), wanted), {20011})
@@ -346,7 +353,7 @@ class TestCalibratedShapes(unittest.TestCase):
         self.assertEqual(detect_checked_locations(self.data, self.snapshot(memory), wanted), {20011, 20012})
 
     def test_event_value_detection(self):
-        memory = FakeMemory()
+        memory = self.field_memory()
         wanted = {20006}
         self.set_event(memory, 606, value=0, done=True)
         self.assertEqual(detect_checked_locations(self.data, self.snapshot(memory), wanted), set(), "done alone")
@@ -354,12 +361,43 @@ class TestCalibratedShapes(unittest.TestCase):
         self.assertEqual(detect_checked_locations(self.data, self.snapshot(memory), wanted), {20006})
 
     def test_story_complete_is_the_ending_event(self):
-        memory = FakeMemory()
+        memory = self.field_memory()
         memory.set_byte(SHAPED_FLAGS + CHAPTER_BYTE, 9)
         self.set_event(memory, 146)  # the neighbour in the same byte
         self.assertFalse(story_complete(self.data, self.snapshot(memory)), "the last chapter alone is not the end")
         self.set_event(memory, 147)
         self.assertTrue(story_complete(self.data, self.snapshot(memory)))
+
+    def test_checks_and_the_goal_are_only_read_in_the_field(self):
+        memory = self.field_memory()
+        self.set_event(memory, 1610)
+        self.set_event(memory, 147)
+        wanted = {loc.id for loc in self.data.locations}
+        for mode in (0, 2, 3, 0xFF):  # a Robattle or the B menu, a scene change, the title screen, a wiped mode byte
+            memory.set_byte(SHAPED_MODE, mode)
+            snapshot = self.snapshot(memory)
+            self.assertEqual(detect_checked_locations(self.data, snapshot, wanted), set(), f"mode {mode}")
+            self.assertFalse(story_complete(self.data, snapshot), f"mode {mode}")
+        memory.set_byte(SHAPED_MODE, 1)
+        snapshot = self.snapshot(memory)
+        self.assertEqual(detect_checked_locations(self.data, snapshot, wanted), {20011})
+        self.assertTrue(story_complete(self.data, snapshot))
+
+    def test_a_wiped_flag_table_is_not_a_game_in_progress(self):
+        """Choosing New Game fills RAM with 0xFF: every flag reads as set, which must not read as every check made."""
+        memory = self.field_memory()
+        memory.ram[SHAPED_FLAGS - RAM_BASE:SHAPED_FLAGS - RAM_BASE + 2048] = b"\xFF" * 2048
+        snapshot = self.snapshot(memory)
+        self.assertFalse(snapshot.game_is_running())
+        self.assertEqual(detect_checked_locations(self.data, snapshot, {loc.id for loc in self.data.locations}), set())
+        self.assertFalse(story_complete(self.data, snapshot))
+        memory.ram[SHAPED_FLAGS - RAM_BASE:SHAPED_FLAGS - RAM_BASE + 2048] = bytes(2048)  # the new game's clean flags
+        self.assertTrue(self.snapshot(memory).game_is_running())
+
+    def test_an_unknown_mode_is_not_held_against_the_game_but_a_wipe_still_is(self):
+        shipped = get_world_data().memory_map
+        self.assertTrue(Snapshot(shipped, {"tables.game_flags": bytes(2048)}).game_is_running(), "mode not read")
+        self.assertFalse(Snapshot(shipped, {"tables.game_flags": b"\xFF" * 2048}).game_is_running())
 
     def test_byte_detection_reads_one_byte(self):
         memory = FakeMemory()

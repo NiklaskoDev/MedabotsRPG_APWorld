@@ -119,8 +119,16 @@ class MedabotsRPGClient(BizHawkClient):
     def on_package(self, ctx: BizHawkClientContext, cmd: str, args: dict) -> None:
         if self.identity is None:
             return
-        if cmd == "RoomInfo" and ApIdentity.digest_seed(args["seed_name"]) != self.identity.seed_digest:
-            self._block(_WRONG_MULTIWORLD)
+        if cmd == "RoomInfo":
+            # RoomInfo is the first package of every connection. What stopped the client on an earlier one (another
+            # multiworld's server, another version of the world) says nothing about this one, so start clean and let
+            # the checks below and the slot data decide again. Otherwise one wrong server would stop the client until
+            # it is restarted, and "connect to the right server" would not help.
+            if self.blocked is not None:
+                logger.info("Connected to a server again; checking the ROM against it afresh.")
+            self.blocked = None
+            if ApIdentity.digest_seed(args["seed_name"]) != self.identity.seed_digest:
+                self._block(_WRONG_MULTIWORLD)
         elif cmd == "Connected":
             self._check_slot_data(ctx, args.get("slot_data") or {})
             if self.blocked is None:

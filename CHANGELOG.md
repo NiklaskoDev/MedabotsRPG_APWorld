@@ -44,6 +44,11 @@ Calibration against Medabots: Metabee Version (USA) in BizHawk; see `docs/CALIBR
 
 ### Fixed
 
+- Choosing **New Game** made the client report every check and the story goal. The game fills its RAM, the event flags
+  included, with `0xFF` as soon as New Game is chosen, and the client read the flags on every tick. They are now read
+  only while the game is in the field and the flag table is not all `0xFF`. New required memory-map state `in_field`.
+- After connecting to the wrong server once (the "different multiworld" error), the client stayed stopped even when you
+  connected to the right one, until it was restarted. A stop now lasts only for the connection that caused it.
 - `tools/analyze_rom.py` decoded the battle table's pointers as battle records.
 
 ### Removed

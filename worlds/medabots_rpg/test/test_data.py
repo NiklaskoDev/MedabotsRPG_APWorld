@@ -78,6 +78,14 @@ class TestShippedData(unittest.TestCase):
             self.assertIsNotNone(loc.detect, loc.name)
             self.assertIsNotNone(loc.neutralize, loc.name)
 
+    def test_the_field_gate_reads_the_same_mode_byte_as_delivery(self):
+        """Check detection and item delivery must agree on what "in the field" is."""
+        state = self.data.memory_map.state
+        field, safe, battle = state["in_field"], state["safe_to_deliver"], state["in_battle"]
+        self.assertEqual((field.address, field.values), (0x0300178C, (1,)))
+        self.assertEqual((field.address, field.values), (safe.also[0].address, safe.also[0].values))
+        self.assertEqual(field.address, battle.address, "the same byte, where 0 means a Robattle or the B menu")
+
     def test_story_areas_form_one_chain(self):
         parents = [a.parent for a in self.data.areas]
         self.assertEqual(parents[0], None)
@@ -151,6 +159,16 @@ class TestValidation(unittest.TestCase):
         def mutate(raw):
             raw["memory_map"]["tables"]["money"] = None
         self.assertRejected(mutate, "marked verified but is missing")
+
+    def test_verified_memory_map_must_define_the_field_state(self):
+        """Without it the client would read check and goal flags out of memory that New Game has wiped."""
+        def drop(raw):
+            del raw["memory_map"]["state"]["in_field"]
+
+        def blank(raw):
+            raw["memory_map"]["state"]["in_field"] = None
+        self.assertRejected(drop, "state.in_field")
+        self.assertRejected(blank, "state.in_field")
 
     def test_byte_detection_must_stay_inside_its_table(self):
         def mutate(raw):

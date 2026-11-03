@@ -14,8 +14,10 @@ from .support import (
     FLAG_BIT_SQUIDGUTS,
     FLAG_BIT_STORY_COMPLETE,
     FLAGS,
+    IN_FIELD,
     MEDIUM_POUCH,
     MONEY,
+    RAM_BASE,
     SMALL_POUCH,
     SYSTEM_BUS,
     FakeMemory,
@@ -185,6 +187,28 @@ class TestServerPackages(ClientTestCase):
                                                                                "world_version": "9.9.9"}})
         self.assertIn("9.9.9", self.client.blocked)
 
+    async def test_reconnecting_to_the_right_server_lifts_the_block(self):
+        with self.assertLogs("Client", "ERROR"):
+            self.client.on_package(make_context(), "RoomInfo", {"seed_name": "someone-elses-seed"})
+        self.assertIsNotNone(self.client.blocked)
+        with self.assertLogs("Client", "INFO"):
+            self.client.on_package(make_context(), "RoomInfo", {"seed_name": SEED})
+        self.assertIsNone(self.client.blocked)
+
+    async def test_a_second_wrong_server_blocks_again(self):
+        for _ in range(2):
+            with self.assertLogs("Client", "ERROR"):
+                self.client.on_package(make_context(), "RoomInfo", {"seed_name": "someone-elses-seed"})
+            self.assertIn("different multiworld", self.client.blocked)
+
+    async def test_a_world_version_block_ends_with_the_connection_that_caused_it(self):
+        with self.assertLogs("Client", "ERROR"):
+            self.client.on_package(make_context(), "Connected", {"slot_data": {**SLOT_DATA, "data_hash": "0" * 64}})
+        self.assertIsNotNone(self.client.blocked)
+        self.client.on_package(make_context(), "RoomInfo", {"seed_name": SEED})
+        self.client.on_package(make_context(), "Connected", {"slot_data": SLOT_DATA})
+        self.assertIsNone(self.client.blocked)
+
     async def test_connecting_requests_the_delivery_counter(self):
         ctx = make_context()
         self.client.on_package(ctx, "Connected", {"slot_data": SLOT_DATA})
@@ -227,6 +251,56 @@ class TestGameWatcher(ClientTestCase):
         await self.client.game_watcher(ctx)
         self.assertEqual(ctx.sent, [{"cmd": "LocationChecks", "locations": [20003]}])
         self.assertEqual(ctx.locations_checked, {20003})
+
+    async def test_the_client_works_again_after_a_wrong_server(self):
+        """Connecting this ROM to another seed's server must not stop the client for good."""
+        ctx = await self.connect(missing={20003})
+        with self.assertLogs("Client", "ERROR"):
+            self.client.on_package(ctx, "RoomInfo", {"seed_name": "someone-elses-seed"})
+        self.memory.set_bit(FLAGS, FLAG_BIT_SQUIDGUTS)
+        await self.client.game_watcher(ctx)
+        self.assertEqual(ctx.sent, [], "stopped while connected to the wrong server")
+
+        self.client.on_package(ctx, "RoomInfo", {"seed_name": SEED})  # the right server
+        self.client.on_package(ctx, "Connected", {"slot_data": SLOT_DATA})
+        await asyncio.sleep(0)
+        self.client.on_package(ctx, "Retrieved", {"keys": {"medabots_rpg_0_1_applied": 0}})
+        ctx.sent.clear()
+        await self.client.game_watcher(ctx)
+        self.assertEqual(ctx.sent, [{"cmd": "LocationChecks", "locations": [20003]}])
+
+    async def test_choosing_new_game_reports_no_check_and_no_goal(self):
+        """New Game fills the game's RAM, the event flags too, with 0xFF; that is not every check made."""
+        ctx = await self.connect(missing={20003, 20001})
+        flags = slice(FLAGS - RAM_BASE, FLAGS - RAM_BASE + 64)
+        self.memory.ram[flags] = b"\xFF" * 64
+        self.memory.set_byte(IN_FIELD, 0xFF)  # the wipe reaches the main mode as well
+        await self.client.game_watcher(ctx)
+        self.memory.set_byte(IN_FIELD, 1)  # even if the mode says field while the flags are still wiped
+        await self.client.game_watcher(ctx)
+        self.assertEqual(ctx.sent, [])
+        self.assertEqual(ctx.locations_checked, set())
+        self.assertFalse(self.client.goal_sent)
+
+        self.memory.ram[flags] = bytes(64)  # the new game starts with clean flags
+        await self.client.game_watcher(ctx)
+        self.assertEqual(ctx.sent, [])
+        self.memory.set_bit(FLAGS, FLAG_BIT_SQUIDGUTS)
+        await self.client.game_watcher(ctx)
+        self.assertEqual(ctx.sent, [{"cmd": "LocationChecks", "locations": [20003]}], "real progress still counts")
+
+    async def test_checks_and_the_goal_wait_until_the_game_is_in_the_field(self):
+        ctx = await self.connect(missing={20003})
+        self.memory.set_bit(FLAGS, FLAG_BIT_SQUIDGUTS)
+        self.memory.set_bit(FLAGS, FLAG_BIT_STORY_COMPLETE)
+        for mode in (3, 2, 0):  # title screen, a scene change, a Robattle or the B menu
+            self.memory.set_byte(IN_FIELD, mode)
+            await self.client.game_watcher(ctx)
+            self.assertEqual(ctx.sent, [], f"mode {mode}")
+        self.memory.set_byte(IN_FIELD, 1)
+        await self.client.game_watcher(ctx)
+        self.assertIn({"cmd": "LocationChecks", "locations": [20003]}, ctx.sent)
+        self.assertIn({"cmd": "StatusUpdate", "status": ClientStatus.CLIENT_GOAL}, ctx.sent)
 
     async def test_story_goal_is_reported_once(self):
         ctx = await self.connect()

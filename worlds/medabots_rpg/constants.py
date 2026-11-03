@@ -35,5 +35,11 @@ EVENT_VALUE_SHIFTS = (4, 0)
 MEDAL_RECORD_SIZE = 0x40
 MEDAL_TABLE_ENTRY_SIZE = 16
 
+REQUIRED_STATES = ("safe_to_deliver", "in_battle", "in_field")
+"""State flags a verified memory map must define. ``in_field`` is what keeps the client from reading check and goal
+flags out of memory the game has wiped (choosing New Game fills it with 0xFF), so a map without it is never complete."""
+WIPED_FLAG_BYTE = 0xFF
+"""What New Game fills the game's RAM with. A flag table made only of these bytes is not a game in progress."""
+
 # Version-specific constants
 GBA_ROM_DOMAIN = "ROM"
