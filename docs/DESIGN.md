@@ -84,8 +84,10 @@ entries are unknown in a verified memory map is dropped from the pool at generat
   opens the next; the last area's event is the goal. The order is provisional and lives in `data/regions.json`.
 * `battle_logic` (off / relaxed / standard) additionally gates each area behind a growing share of the medaparts in the
   pool (0 in the first area up to 15 % / 30 % in the last), **capped at half the number of locations in the earlier
-  areas**, so the parts a gate needs can always be found before it. Parts are progression items only while it is on
-  (or while the goal is *Collect Medaparts*).
+  areas**, so the parts a gate needs can always be found before it. Only *usable* medaparts count, the ones of the
+  gender of Ikki's first Tinpet (male), because a Tinpet cannot fit parts of the other gender; while `bot_genders` is
+  unknown every part counts. Parts are progression items only while they count for it (or while the goal is *Collect
+  Medaparts*, which counts every part).
 * Rules are JSON expressions (`rules.py`) compiled to Archipelago's rule builder, which gives serialization and
   human-readable explanations.
 

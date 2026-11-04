@@ -34,6 +34,7 @@ IN_FIELD = RAM_BASE + 0x402
 ARMOR_SCALE = RAM_BASE + 0x410
 MEDAL_DISABLE = RAM_BASE + 0x411
 FORCE_ENCOUNTER = RAM_BASE + 0x412
+ENCOUNTER_AREA = RAM_BASE + 0x413
 
 FLAG_BIT_SQUIDGUTS = 5
 FLAG_BIT_MEDAL_ROOM = 9
@@ -48,6 +49,7 @@ SHAPED_SAFE = RAM_BASE + 0x2410
 SHAPED_MODE = RAM_BASE + 0x2411
 SHAPED_SCENE = RAM_BASE + 0x2412
 SHAPED_ENCOUNTER = RAM_BASE + 0x2413
+SHAPED_ENCOUNTER_AREA = RAM_BASE + 0x2414
 CHAPTER_BYTE = 2047
 """Offset of the chapter counter in the game_flags table (the last chapter is 9)."""
 
@@ -73,10 +75,20 @@ def unverified_data() -> WorldData:
     return load_world_data(DictDataSource(raw))
 
 
-def verified_data(parts_layout: str = "model_major", with_optional: bool = True) -> WorldData:
+def gendered_data() -> WorldData:
+    """The shipped data with invented part genders: a quarter of the models female, never Metabee (model 42)."""
+    raw = copy.deepcopy(raw_data())
+    bots = raw["game_tables"]["bots"]
+    raw["game_tables"]["bot_genders"] = ["female" if model % 4 == 1 else "male" for model in range(len(bots))]
+    return load_world_data(DictDataSource(raw))
+
+
+def verified_data(parts_layout: str = "model_major", with_optional: bool = True,
+                  with_encounter_area: bool = True) -> WorldData:
     """The shipped data with a complete, invented memory map and verified locations.
 
-    ``with_optional=False`` leaves the trap-only tables unknown, as a real calibration might.
+    ``with_optional=False`` leaves the trap-only tables unknown, as a real calibration might;
+    ``with_encounter_area=False`` leaves only the encounter-area byte unknown.
     """
     raw = copy.deepcopy(raw_data())
     ref = lambda address, kind, size, **extra: {"address": hex(address), "kind": kind, "size": size, **extra}  # noqa: E731
@@ -97,6 +109,7 @@ def verified_data(parts_layout: str = "model_major", with_optional: bool = True)
             "battle_armor_scale": ref(ARMOR_SCALE, "u8", 1) if with_optional else None,
             "battle_medal_disable": ref(MEDAL_DISABLE, "u8", 1) if with_optional else None,
             "force_encounter": ref(FORCE_ENCOUNTER, "u8", 1) if with_optional else None,
+            "encounter_area": ref(ENCOUNTER_AREA, "u8", 1) if with_optional and with_encounter_area else None,
         },
     )
     raw["regions"]["goal_detect"] = {"type": "flag", "table": "game_flags", "bit": FLAG_BIT_STORY_COMPLETE}
@@ -123,6 +136,7 @@ def shaped_data() -> WorldData:
     state["in_battle"][0]["address"], state["in_battle"][1]["address"] = hex(SHAPED_MODE), hex(SHAPED_SCENE)
     state["in_field"]["address"] = hex(SHAPED_MODE)
     raw["memory_map"]["optional_tables"]["force_encounter"]["address"] = hex(SHAPED_ENCOUNTER)
+    raw["memory_map"]["optional_tables"]["encounter_area"]["address"] = hex(SHAPED_ENCOUNTER_AREA)
     raw["regions"]["goal_status"] = "verified"
     for entry in raw["locations"]["locations"]:
         if entry["status"] != "absent":
@@ -139,7 +153,9 @@ class FakeMemory:
         self.rom = bytearray(rom)
         self.writes: list[tuple[int, bytes]] = []
         self.fail_next_guard = False
-        self.ram[IN_FIELD - RAM_BASE] = 1  # the invented layout starts out in the field; tests move it away from there
+        # The invented layout starts out in the field, on a map with random encounters; tests move it away from there.
+        self.ram[IN_FIELD - RAM_BASE] = 1
+        self.ram[ENCOUNTER_AREA - RAM_BASE] = 1
 
     def _domain(self, name: str) -> tuple[bytearray, int]:
         return (self.ram, RAM_BASE) if name == SYSTEM_BUS else (self.rom, 0)

@@ -24,8 +24,9 @@ In order of how much each can still go wrong:
    Robattle. The safe-state rule is two bytes; the play-test is where its blind spots show up.
 4. **Money and traps are counted, not state-based.** Loading an older save keeps parts and medals (they are re-asserted)
    but loses money received since, and a trap is never re-applied. This is by design; confirm it is acceptable.
-5. **A forced encounter that never fires.** Ambush writes 32 to the encounter counter. When it is received where there
-   are no random encounters, the trap expires after 5 minutes *without clearing the counter*. Observe what happens next.
+5. **An Ambush away from random encounters.** The first run showed that the game resets the encounter counter on the
+   next map load, so such an Ambush was lost. It now waits for a map with encounters, using an address read from the
+   code that still has to be watched live (TR-5).
 6. **An item that cannot be written blocks the queue behind it** (nothing is lost, but nothing after it arrives either).
    The medal case is the likeliest cause.
 7. **Only four location categories have checks:** medals (1), chests and pickups (7), boss rewards (1), mini-game prizes
@@ -38,10 +39,14 @@ starting-Medabot choice.
 
 | Finding | Status |
 |---|---|
-| **P0.** Choosing New Game fills the game's RAM, the event flags included, with `0xFF`; the client read that as all 11 checks made and the story complete (Metabee USA and Rokusho USA; the Europe versions show the same RAM). | Fixed in code with tests: flags are read only in the field and never from an all-`0xFF` table. Retest **SV-8** and **SV-9** on all four versions. |
-| **P1.** After connecting a ROM to another seed's server once, the client stayed stopped on the right server too, until it was restarted. | Fixed in code with tests: a stop belongs to one connection. Retest **CN-8**. |
+| **P0.** Choosing New Game fills the game's RAM, the event flags included, with `0xFF`; the client read that as all 11 checks made and the story complete (Metabee USA and Rokusho USA; the Europe versions show the same RAM). | **Fixed and confirmed** in the second run (`v0.1.0-rc2`): SV-8 passed on all four versions. The with-save variant of SV-8 is confirmed on Metabee USA only. |
+| **P1.** After connecting a ROM to another seed's server once, the client stayed stopped on the right server too, until it was restarted. | **Fixed and confirmed** in the second run: CN-8 passed. |
+| **P1.** A part only fits a Tinpet of its own gender; Ikki's first Tinpet is male, so received female parts are unusable for a long time, while Battle Logic counted every part. | Fixed in code with tests: Battle Logic counts only parts that fit (item group *Usable Medaparts*); the pool is unchanged. **Data still missing:** run `analyze_rom.py` on all four ROMs and paste `bot_genders` (CALIBRATION.md, Step 0); until then every part counts and generation warns. Then run **IT-8**. |
+| **P1.** An Ambush received away from random encounters was lost: the next map load resets the counter (TR-5). | Fixed in code with tests: it waits until the player is on a map with encounters. The address it uses for that was read from the code; retest **TR-5** with its new expected result. |
+| Game page: "loading an older save gives you everything again" (money received since is lost) and "a trap waits" (an Ambush did not). | Game page corrected; the Ambush now does wait. |
 
-Seeds and patches made before the fix are refused by the fixed client (the data hash changed); generate and patch again.
+Seeds and patches made before a data change are refused by the fixed client (the data hash changed); generate and patch
+again after every update of the world.
 
 ## Setup
 
@@ -130,7 +135,9 @@ if time allows.
 * Money pouches are $10, $50 and $200 and are clamped at $999.99 (the excess is lost). Money Drain takes 10, 25 or 50
   percent (mild, normal, harsh), never below zero.
 * Ambush forces a Robattle on the next step in an area with random encounters, once (mild and normal) or twice in a row
-  (harsh). Every trap is lifted after 5 minutes at the latest.
+  (harsh). Received anywhere else it waits, with no time limit, and it is taken back if you leave the area before it
+  fires; it lives in the client, so restarting the client loses a waiting one. Every trap that has taken effect is
+  lifted after 5 minutes at the latest.
 * How many received items were handled is kept on the server (key `medabots_rpg_<team>_<slot>_applied`), so a restart of
   the client, BizHawk or the server does not deliver anything again.
 * On-screen messages are `Found <item>` for items from your own slot and `Received <item> from <player>` otherwise.
@@ -160,7 +167,7 @@ if time allows.
 | ID | Pri | Case | Expected | Result |
 |---|---|---|---|---|
 | CN-1 | P0 | Enter `localhost:38281` (bare) in the client. | Connects; the slot name is not asked for. | |
-| CN-2 | P1 | Enter `ws://localhost:38281`, then an `archipelago://Bee@localhost:38281` link. | Both connect. | |
+| CN-2 | P1 | Enter `ws://localhost:38281`, then an `archipelago://Bee:pw@localhost:38281` link (Archipelago refuses a link with a name but no password). | Both connect. | |
 | CN-3 | P0 | Host with `MultiServer --cert … --cert_key …` on a name with a certificate from a public authority and connect with `wss://name:port`. | Connects, encrypted, and play works as in the plain case. | |
 | CN-4 | P1 | Same with a self-signed certificate. | Refused with "Failed to connect to the multiworld server"; the client does not ignore the certificate. | |
 | CN-5 | P0 | Load the patched ROM, run `connector_bizhawk_generic.lua`. | The client names Medabots RPG and the correct slot; no unverified-build warning. | |
@@ -197,13 +204,14 @@ seconds in each state before leaving it.
 
 | ID | Pri | Case | Expected | Result |
 |---|---|---|---|---|
-| IT-1 | P0 | Send one part per slot (head, right arm, left arm, legs). | Each is named correctly in the parts screen, can be equipped, and works in a Robattle. | |
+| IT-1 | P0 | Send one part per slot (head, right arm, left arm, legs) of a male Medabot, and one female part. | Each is named correctly in the Medaparts screen. The male parts can be fitted to Ikki's Tinpet and work in a Robattle; the female part is not offered (the game's rule, not a defect). | |
 | IT-2 | P2 | Send the same part again. | Still owned once; nothing breaks. (The game's own pickup would raise the count.) | |
 | IT-3 | P0 | Send a medal the player does not own. | In the medal case under its own name with a plausible level and stats; can be put into a Medabot and used in a Robattle with the right name shown; survives an in-game save and reload. | |
 | IT-4 | P0 | Send the same medal again, then several different ones. | No second copy; each new one sits at the level the rule gives. | |
 | IT-5 | P0 | Send a small, medium and large pouch. | +$10, +$50, +$200 as the menu shows dollars and cents. | |
-| IT-6 | P1 | Receive items on Seed A (all), Seed B (progression only), Seed C (none). | `Found …` for own items, `Received … from …` otherwise; Seed B only announces progression items; Seed C nothing. | |
+| IT-6 | P1 | Receive items on Seed A (all), Seed B (progression only), Seed C (none). Use `/send_location` for Seed B: items from `/send` never count as progression. | `Found …` for own items, `Received … from …` otherwise; Seed B only announces progression items; Seed C nothing. | |
 | IT-7 | P2 | Generate once with `include_version_exclusives: true` and send a part that exists only in the other version. | Owned, equippable. | |
+| IT-8 | P1 | Once `bot_genders` is filled in: generate Seed A again with Battle Logic *standard*. | No genders warning; the spoiler says "male medaparts (they fit Ikki's first Tinpet) needed to enter an area"; the numbers are no larger than the male parts in the pool. | |
 
 ## 6. Saves and persistence
 
@@ -214,7 +222,7 @@ seconds in each state before leaving it.
 | SV-3 | P1 | Same with a BizHawk savestate taken before the delivery. | Same result; no crash. | |
 | SV-4 | P0 | Close and reopen the client mid-session. | Nothing is delivered twice. | |
 | SV-5 | P1 | Stop and restart the server from its save file. | Checks and the delivery counter persist; no duplicates. | |
-| SV-6 | P0 | Play with BizHawk open but the client closed: open a chest, receive nothing. Items are sent to you meanwhile. Start the client. | The check is sent once, the waiting items arrive once. | |
+| SV-6 | P0 | Play with BizHawk open but the client closed: open a chest, receive nothing. Items are sent to you meanwhile. Start a **new** client process (Archipelago's client re-sends the checks it remembers, which would hide a failure). | The check is sent once, the waiting items arrive once. | |
 | SV-7 | P1 | Soft reset mid-session. | The client survives and keeps delivering. | |
 | SV-8 | P0 | With the client connected and a server that has not seen any checks, choose **New Game** from the title menu, once with no save file and once with one, and play the first ten minutes. Watch the server and the client log while you are on the title menu, at the confirmation prompt and on the first screens. Repeat on all four versions. | No check and no goal are sent at any point. The first real check (once you reach one) is still sent. | |
 | SV-9 | P0 | **Continue** an existing save with the client connected, then go back to the title and choose New Game. | Continue behaves as before: checks already made are not sent twice. The New Game afterwards sends nothing, and checks made in the old game are not undone. | |
@@ -229,7 +237,7 @@ Make a savestate right before each.
 
 | ID | Pri | Location | What to do | Specific points | Result |
 |---|---|---|---|---|---|
-| LC-1 | P0 | 20001 Research Center, Nae's medal room | Take a medal (one of six). | Test at least two of the six choices; every one sends the check and none gives a medal. | |
+| LC-1 | P0 | 20001 Research Center, Nae's medal room | Take a medal (one of six). | Test at least two of the six choices; every one sends the check and none gives a medal. Passed in the second run with the pedestals unlocked by hand: **record the chapter in which they become selectable** in normal play (events 236-241 reach value 1). If it is after Riverview, the location belongs to a later area. | |
 | LC-2 | P0 | 20002 Odoro Marsh, broken parts room | Open the salvage. | No item received. | |
 | LC-3 | P0 | 20003 Odoro Marsh, Squidguts | Fight him for real. | Calibrated with its dialogue and battles blanked, so this is the first real run: no parts or medal, flag set, story continues. | |
 | LC-4 | P0 | 20004 Medabot Island, arcade | Play the $1 game until you win (play again after a loss if the game lets you). | The check is for a win only: a loss should send nothing (record it if it does). The win sends it once and the prize item is not received. The win was only forced before. | |
@@ -251,7 +259,7 @@ Inject with `/send Bee "<name>"`. Strength comes from the seed: normal on Seed A
 | TR-2 | P1 | Money Drain on Seed C (harsh) with $100, and at the edge of a safe state (in a menu). | $50; in the menu it waits and then applies once. | |
 | TR-3 | P0 | Ambush on Seed A while walking in an area with random encounters. | A Robattle starts on the next step; once it is over, encounters return to the normal rate. | |
 | TR-4 | P1 | Ambush on Seed C. | Two Robattles in a row, then normal. | |
-| TR-5 | P1 | Ambush in a town or indoors, then keep walking there for more than 5 minutes, then enter an encounter area. | Record exactly what happens. The counter keeps its armed value after the trap expires; decide whether an ambush an hour later is acceptable or the trap should clear the counter. | |
+| TR-5 | P1 | Ambush in a town or indoors (watch `0x0300640B` and `0x03006409`), keep walking there for more than 5 minutes, then walk onto a route with random encounters. Repeat, but leave the route by a door right after arriving. | In town the counter stays untouched and `0x03006409` is 0. On the route it becomes non-zero, the counter becomes 32 and the next step starts a Robattle. Leaving first: the Ambush fires on the next route instead. If `0x03006409` does not behave like this, report it; setting `encounter_area` to null brings back arming at once. | |
 | TR-6 | P1 | Ambush on the way to a story battle or during a long walking scene. | Record whether it can fire at a bad moment or break a scene. | |
 | TR-7 | P1 | `/send Bee "Rusty Armor Trap"` and `/send Bee "Medal Nap Trap"`, then a pouch. | No effect in game, a message at most, and the pouch still arrives (these traps are not in seeds but must not jam the queue). | |
 | TR-8 | P0 | Send any trap during DG-4 to DG-8 states. | It waits and applies once when safe. | |
@@ -279,7 +287,7 @@ Inject with `/send Bee "<name>"`. Strength comes from the seed: normal on Seed A
 |---|---|---|---|---|
 | NG-1 | P0 | Play at least an hour connected while a `/send` of a part, medal, pouch or trap is made about once a minute, then save, close and load the save. | No crash, softlock or corrupted save; the save loads and holds the items. | |
 | NG-2 | P1 | Close BizHawk without warning, reopen, reload the Lua script. | The client reconnects on its own; nothing delivered twice. | |
-| NG-3 | P1 | Cut the server for a few minutes while you open a chest, then restore it. | The client reconnects and sends the check; waiting items arrive. | |
+| NG-3 | P1 | Cut the server for a few minutes while you open a chest, then restore it (a fresh server process from its save, as in the second run). | The client reconnects and sends the check; waiting items arrive. | |
 | NG-4 | P1 | Generate a YAML with every location category off except `shuffle_npc_gifts`. | Generation stops with "the selected options leave no locations to randomize…". | |
 | NG-5 | P2 | Turn BizHawk's fast-forward on during deliveries. | Items still arrive once. | |
 

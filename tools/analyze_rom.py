@@ -15,7 +15,9 @@ The tool never modifies the ROM and writes nothing but the optional JSON report.
 * every event script (by number) that gives an item, part, money, a medal or a Medabot, and the event flags it sets.
   Script n is also map object n and owns event flag n, so these are the candidates for locations;
 * whether the memory map's identity-block region is still blank, plus the largest blank runs of the ROM as
-  alternatives. See docs/CALIBRATION.md for what to do with the results.
+  alternatives;
+* the gender of every Medabot model, read from the part table, ready to paste into game_tables.json's
+  ``bot_genders``. See docs/CALIBRATION.md for what to do with the results.
 """
 from __future__ import annotations
 
@@ -26,6 +28,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from worlds.medabots_rpg.constants import PART_SLOTS
 from worlds.medabots_rpg.data_loader import WorldData, get_world_data
 from worlds.medabots_rpg.rom_info import RomError, identify_rom
 from worlds.medabots_rpg.rom_scripts import (
@@ -46,6 +49,11 @@ MONEY_SCALE = 10
 """Opcode 0x3A adds ten times its operand to the money."""
 BLANK = 0x00  # the four ROMs pad their unused space with 0x00
 CONTEXT_BYTES = 6
+GENDER_BYTE = 3
+"""Byte of a 16-byte part record that holds its gender (record_layouts.part in game_tables.json)."""
+GENDER_REFERENCES = {"Metabee": "male", "Rokusho": "male", "Aquacrown": "female"}
+"""Seen in the play-test: Ikki's male Tinpet takes Metabee's and Rokusho's parts but never offers Aquacrown's.
+Metabee's value is taken to mean male; the other two only cross-check the result."""
 
 
 def hex_offset(value: int) -> str:
@@ -176,6 +184,47 @@ def reward_scripts(rom: bytes, data: WorldData) -> dict[str, Any]:
     return {"bank": hex_offset(bank.base), "count": len(bank.starts), "unparsed": unparsed, "scripts": found}
 
 
+def part_genders(rom: bytes, data: WorldData) -> dict[str, Any]:
+    """The gender of every bot model, from the gender byte of its four part records.
+
+    The order of the 480 records (model by model, or slot by slot) is not documented, so both are tried: every part of a
+    Medabot model has the model's gender, and only the right order makes the four records of each model agree.
+    """
+    signature = data.rom.signatures.get("part_table")
+    offset = find_signature(rom, signature) if signature else None
+    if offset is None:
+        return {"table": None, "error": "the part table was not found"}
+    layout = data.tables.record_layouts["part"]
+    size, count = layout["size"], layout["count"]
+    bots, slots = len(data.tables.bots), len(PART_SLOTS)
+    if count != bots * slots or offset + size * count > len(rom):
+        return {"table": hex_offset(offset), "error": f"expected {bots * slots} part records of {size} bytes"}
+    values = [rom[offset + i * size + GENDER_BYTE] for i in range(count)]
+    orders = {"model_major": lambda model, slot: model * slots + slot,
+              "slot_major": lambda model, slot: slot * bots + model}
+    mixed = {name: [data.tables.bots[m] for m in range(bots) if len({values[index(m, s)] for s in range(slots)}) > 1]
+             for name, index in orders.items()}
+    result: dict[str, Any] = {"table": hex_offset(offset), "values": dict(sorted(Counter(values).items()))}
+    consistent = [name for name, models in mixed.items() if not models]
+    if len(consistent) != 1:
+        best = min(mixed, key=lambda name: len(mixed[name]))
+        result["error"] = ("both record orders fit, so the order cannot be told apart" if consistent else
+                           f"the parts of some models disagree (fewest with {best}: {', '.join(mixed[best])})")
+        return result
+    order = consistent[0]
+    by_bot = [values[orders[order](model, 0)] for model in range(bots)]
+    result.update(order=order, by_bot=dict(zip(data.tables.bots, by_bot, strict=True)))
+    male = result["by_bot"]["Metabee"]
+    if len(set(by_bot)) > 2:
+        result["error"] = f"more than two gender values {sorted(set(by_bot))}; decide what they mean by hand"
+        return result
+    labels = ["male" if value == male else "female" for value in by_bot]
+    result["bot_genders"] = labels
+    result["references"] = {bot: {"found": labels[data.tables.bots.index(bot)], "expected": expected}
+                            for bot, expected in GENDER_REFERENCES.items()}
+    return result
+
+
 def blank_runs(rom: bytes, minimum: int = 256, limit: int = 8) -> list[dict[str, str]]:
     """The longest runs of blank (0x00) bytes, longest first: candidates for where the world may store data."""
     runs: list[tuple[int, int]] = []
@@ -218,6 +267,7 @@ def analyze(rom: bytes, data: WorldData | None = None, watch_opcodes: tuple[int,
         "battles": decode_battles(rom, data, version.battles_offset),
         "scripts": analyze_scripts(rom, data, watch_opcodes),
         "reward_scripts": reward_scripts(rom, data),
+        "part_genders": part_genders(rom, data),
     }
 
 
@@ -226,6 +276,23 @@ def _describe_block(block: dict[str, Any]) -> str:
         return "not configured"
     verdict = "blank, usable" if block["blank"] else "NOT blank, choose another"
     return f"{block['offset']} +{block['size']}: {verdict}"
+
+
+def _describe_genders(genders: dict[str, Any]) -> list[str]:
+    if "bot_genders" not in genders:
+        where = f" (part table at {genders['table']})" if genders["table"] else ""
+        return [f"Part genders: {genders.get('error')}{where}"]
+    labels = genders["bot_genders"]
+    checks = [f"{bot} {ref['found']}"
+              + ("" if ref["found"] == ref["expected"] else f" (EXPECTED {ref['expected']})")
+              for bot, ref in genders["references"].items()]
+    return [
+        f"Part genders: table at {genders['table']}, {genders['order'].replace('_', ' ')} order, "
+        f"{labels.count('male')} male and {labels.count('female')} female models (raw values {genders['values']})",
+        "  Play-test references: " + ", ".join(checks),
+        '  For game_tables.json "bot_genders" (same in every version? run this on all four):',
+        "  " + json.dumps(labels),
+    ]
 
 
 def render_summary(report: dict[str, Any]) -> str:
@@ -252,6 +319,8 @@ def render_summary(report: dict[str, Any]) -> str:
         "Identity block (memory_map.json ap_block): " + _describe_block(block),
         "Largest blank ROM runs (alternatives):",
         *(f"  {run['offset']} +{run['length']}" for run in report["blank_runs"]),
+        "",
+        *_describe_genders(report["part_genders"]),
     ]
     for opcode, hits in scripts["watched"].items():
         lines += ["", f"Opcode {opcode}: {len(hits)} occurrences"]

@@ -43,6 +43,9 @@ _TRAP_TABLE = {
     "medal_nap": "optional_tables.battle_medal_disable",
     "ambush": "optional_tables.force_encounter",
 }
+_ENCOUNTER_AREA = "optional_tables.encounter_area"
+"""Non-zero on maps with random encounters. An Ambush is only armed there: anywhere else the game would reset the
+encounter counter on the next map load and the trap would be lost."""
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -275,6 +278,9 @@ class ActiveTrap:
     key: str
     battles_left: int
     started_at: float
+    """When the effect began. The timeout only runs while the trap is armed."""
+    armed: bool = True
+    """False while a trap waits for its moment (an Ambush away from maps with random encounters)."""
 
 
 @dataclass
@@ -325,9 +331,12 @@ def _start_trap(data: WorldData, ws: _Workspace, state: ClientState, key: str, s
     path = _TRAP_TABLE[key]
     if path not in ws.buffers:
         return
+    battles = 1 if key == "rusty_armor" else levels[strength]
+    if key == "ambush":  # armed by _arm_waiting_traps, on a map where the game will actually use it
+        state.traps = [t for t in state.traps if t.key != key] + [ActiveTrap(key, battles, now, armed=False)]
+        return
     value = levels[strength] if key == "rusty_armor" else _trigger_value(ws, path)
     ws.buffers[path][:] = value.to_bytes(len(ws.buffers[path]), "little")
-    battles = 1 if key == "rusty_armor" else levels[strength]
     state.traps = [t for t in state.traps if t.key != key] + [ActiveTrap(key, battles, now)]
 
 
@@ -342,22 +351,50 @@ def _update_traps(ws: _Workspace, state: ClientState, in_battle: bool | None, no
     battle_ended = state.was_in_battle and in_battle is False
     still_active: list[ActiveTrap] = []
     for trap in state.traps:
-        if battle_ended:
+        if battle_ended and trap.armed:  # a story battle does not use up an Ambush that is still waiting
             trap.battles_left -= 1
-        expired = trap.battles_left <= 0 or now - trap.started_at > TRAP_TIMEOUT_SECONDS
+        expired = trap.battles_left <= 0 or (trap.armed and now - trap.started_at > TRAP_TIMEOUT_SECONDS)
         path = _TRAP_TABLE[trap.key]
         if expired:
             revert = _TRAP_REVERT_VALUE[trap.key]
             if revert is not None and path in ws.buffers:
                 ws.buffers[path][:] = revert.to_bytes(len(ws.buffers[path]), "little")
             continue
-        if battle_ended and trap.key == "ambush" and path in ws.buffers:
-            value = _trigger_value(ws, path)  # the next ambush of the series
-            ws.buffers[path][:] = value.to_bytes(len(ws.buffers[path]), "little")
+        if battle_ended and trap.key == "ambush":
+            trap.armed = False  # the next ambush of the series, armed once the player is back on an encounter map
         still_active.append(trap)
     state.traps = still_active
     if in_battle is not None:
         state.was_in_battle = in_battle
+
+
+def _on_encounter_map(ws: _Workspace) -> bool | None:
+    """Whether the current map has random encounters, or ``None`` when the memory map does not say."""
+    buffer = ws.buffers.get(_ENCOUNTER_AREA)
+    if not buffer:
+        return None
+    ref = ws.memory_map.resolve(_ENCOUNTER_AREA)
+    return buffer[0] in ref.values if ref.values else bool(buffer[0])
+
+
+def _arm_waiting_traps(ws: _Workspace, state: ClientState, now: float) -> None:
+    """Arm an Ambush on a map with random encounters, and take it back if the player leaves before it fires.
+
+    Only called in a safe state. Away from encounter maps the game resets the encounter counter on the next map load, so
+    an Ambush written there would be lost; it waits instead, with no timeout. When the encounter area is unknown the
+    trap is armed at once, as before that address was known.
+    """
+    on_encounter_map = _on_encounter_map(ws)
+    for trap in state.traps:
+        path = _TRAP_TABLE[trap.key]
+        if trap.key != "ambush" or path not in ws.buffers:
+            continue
+        if trap.armed and on_encounter_map is False:
+            trap.armed = False  # left the map before the encounter; the map load resets the counter
+        elif not trap.armed and on_encounter_map is not False:
+            value = _trigger_value(ws, path)
+            ws.buffers[path][:] = value.to_bytes(len(ws.buffers[path]), "little")
+            trap.armed, trap.started_at = True, now
 
 
 def _announcement(received: Received, own_name: str, mode: str) -> str | None:
@@ -410,6 +447,8 @@ def plan_step(
                 announcements.append(text)
             new_state.applied_index += 1
             delivered += 1
+
+        _arm_waiting_traps(ws, new_state, now)
 
     writes, guards = ws.changes()
     return StepResult(writes, guards, announcements, new_state)

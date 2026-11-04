@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from BaseClasses import ItemClassification, Region
 from rule_builder.rules import Has, HasGroup
 
-from .constants import GROUP_MEDALS, GROUP_PARTS
+from .constants import GROUP_MEDALS, GROUP_PARTS, GROUP_USABLE_PARTS
 from .data_loader import LocationDef
 from .items import MedabotsItem
 from .locations import MedabotsLocation, progress_type
@@ -28,13 +28,13 @@ def create_regions(
     multiworld.regions.extend([menu, *regions.values()])
 
     # Areas are entered in story order. Leaving an area requires its "cleared" event, and entering a later one may
-    # additionally require a share of the medaparts (battle logic).
+    # additionally require a share of the medaparts Ikki can fit on his first Tinpet (battle logic).
     world.create_entrance(menu, regions[data.areas[0].name], name="Start Game")
     for area in data.areas[1:]:
         parent = data.area_by_name[area.parent]
         rule = Has(parent.clear_event)
         if area.name in gate_thresholds:
-            rule = rule & HasGroup(GROUP_PARTS, count=gate_thresholds[area.name])
+            rule = rule & HasGroup(GROUP_USABLE_PARTS, count=gate_thresholds[area.name])
         world.create_entrance(regions[parent.name], regions[area.name], rule, name=f"Travel to {area.name}")
 
     for definition in locations:

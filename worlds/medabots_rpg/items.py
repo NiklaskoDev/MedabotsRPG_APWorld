@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from BaseClasses import Item, ItemClassification
 
-from .constants import GAME_NAME, KIND_CONSUMABLE, KIND_MEDAL, KIND_PART, KIND_TRAP
+from .constants import GAME_NAME, GROUP_USABLE_PARTS, KIND_CONSUMABLE, KIND_MEDAL, KIND_PART, KIND_TRAP
 from .data_loader import ItemDef, WorldData
 
 if TYPE_CHECKING:
@@ -30,7 +30,8 @@ def item_name_groups(data: WorldData) -> dict[str, set[str]]:
 def item_classification(item: ItemDef, options: MedabotsOptions) -> ItemClassification:
     """Parts and medals only count as progression when the logic or the goal actually looks at them."""
     if item.kind == KIND_PART:
-        needed = options.battle_logic.value != options.battle_logic.option_off
+        # Battle Logic only counts parts Ikki can fit; the Collect Medaparts goal counts every part.
+        needed = options.battle_logic.value != options.battle_logic.option_off and GROUP_USABLE_PARTS in item.groups
         needed = needed or options.goal.value == options.goal.option_collect_medaparts
         return ItemClassification.progression if needed else ItemClassification.useful
     if item.kind == KIND_MEDAL:
@@ -106,6 +107,9 @@ class PoolPlan:
 
     def count(self, data: WorldData, kind: str) -> int:
         return sum(1 for name in self.item_names if data.item_by_name[name].kind == kind)
+
+    def count_group(self, data: WorldData, group: str) -> int:
+        return sum(1 for name in self.item_names if group in data.item_by_name[name].groups)
 
 
 def build_item_pool(

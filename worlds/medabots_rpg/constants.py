@@ -11,6 +11,8 @@ PART_SLOT_GROUPS = ("Head Parts", "Right Arm Parts", "Left Arm Parts", "Leg Part
 
 # Item groups
 GROUP_PARTS = "Medaparts"
+GROUP_USABLE_PARTS = "Usable Medaparts"
+"""Medaparts of the gender of Ikki's first Tinpet, the only ones he can fit at first. Battle Logic counts these."""
 GROUP_MEDALS = "Medals"
 GROUP_MONEY = "Money Pouches"
 GROUP_TRAPS = "Traps"
@@ -34,6 +36,9 @@ EVENT_VALUE_SHIFTS = (4, 0)
 """Shift of the 3-bit event value for an even and an odd event number."""
 MEDAL_RECORD_SIZE = 0x40
 MEDAL_TABLE_ENTRY_SIZE = 16
+
+GENDERS = ("male", "female")
+"""A Tinpet takes only parts of its own gender, and every part of a Medabot model has that model's gender."""
 
 REQUIRED_STATES = ("safe_to_deliver", "in_battle", "in_field")
 """State flags a verified memory map must define. ``in_field`` is what keeps the client from reading check and goal

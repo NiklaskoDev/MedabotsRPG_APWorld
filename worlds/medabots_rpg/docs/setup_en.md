@@ -86,6 +86,7 @@ perfectly safe to make progress offline; everything will re-sync when you reconn
 | *The ROM already has data where the patch wants to write.* | The ROM is already patched or modified. Patch a clean, unmodified ROM. |
 | *This ROM is not a supported version of Medabots.* | Use an English *Metabee* or *Rokusho* GBA ROM. Japanese ROMs and *Medabots AX* are not supported. |
 | *No handler was found for this game.* | The world is not installed correctly, or you loaded a different ROM than the patched one. |
+| A received part is in the Medaparts list but not offered in the build screen | It is a part of the other gender (♀ or ♂ in the list). A Tinpet only takes parts of its own gender, and Ikki's first one is male; the part becomes usable once you have a Tinpet of its gender. Battle Logic never expects you to use such parts. |
 
 Received items appear once you are walking around freely. If nothing arrives, leave the menu or battle and wait a
 moment.

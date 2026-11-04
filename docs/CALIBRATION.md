@@ -37,7 +37,7 @@ This tells you which version the ROM is, where the documented tables are, every 
 instruction in the event scripts (with its script offset and the medal it gives), and every **reward script by
 number**: each event script that gives an item, part, money, a medal or a Medabot, with the event flags it sets. Script
 `n` is also map object `n` and owns event flag `n`, and most reward scripts set their own flag ("sets own flag"), so
-this list is where locations come from. Check three things:
+this list is where locations come from. Check four things:
 
 1. **All signatures are found** (`event_scripts` at least) and the script bank is found. If one says `NOT FOUND`, the
    ROM differs from the documented one; note which.
@@ -47,6 +47,11 @@ this list is where locations come from. Check three things:
    versions.
 3. **The script walk completes** (`stopped early` is not shown). If it stops, the opcode table has a wrong entry near the
    reported offset; fix `script_opcode_lengths` in `data/game_tables.json`.
+4. **The part genders are read.** A Tinpet only takes parts of its own gender, and Battle Logic only counts parts that
+   fit Ikki's first (male) Tinpet. The report reads byte 3 of every part record, works out the record order, and prints
+   the list for `bot_genders` in `data/game_tables.json`. Check that the play-test references agree (Metabee and
+   Rokusho male, Aquacrown female; `EXPECTED` marks a disagreement) and that all four ROMs print the same list, then
+   paste it. While `bot_genders` is `null`, every part counts and generation warns about it.
 
 ## Step 1: find the memory map
 
@@ -77,6 +82,7 @@ go (`{"address": "0x...", "kind": "...", "size": N}`):
 | `tables.game_flags` (`bitfield`) | Snapshot, open one chest or take one gift, snapshot, diff with `--kinds bit_set`. The changed bit is the flag of that check. Repeat for several checks; the flags cluster in one array. The array starts at its lowest address; `size` must cover the highest flag you need. *(Found: 4096 event flags, two per byte; see the comment in `memory_map.json`. Locations refer to them by event number.)* |
 | `state.safe_to_deliver` | A byte that has one value while you walk around freely (list those in `values`) and another in menus, dialogue, battles and screen transitions. Take snapshots in each situation and diff them. The client delivers nothing unless this is true, so be strict. |
 | `state.in_battle` | A byte that is non-zero during a battle. |
+| `optional_tables.encounter_area` | A byte that is non-zero on maps with random encounters (script state + `0xC29`). An Ambush is armed only there, because any other map load resets the encounter counter. Watch it change when you walk from a town onto a route; then receive an Ambush in town and check that it fires on the first route and not before. If it is wrong, set it to `null` and an Ambush is armed at once again. |
 | `state.in_field` | A byte that has one value while you walk around the overworld (list it in `values`) and another at the title screen, between scenes and in battles. The client reads check and goal flags only while it holds, because choosing **New Game** fills the game's RAM, the event flags included, with `0xFF`. Check it from the title menu through "New Game" and the first minutes of a fresh game: no check may appear. A verified map without this entry is rejected. |
 | `optional_tables.*` | Only if you find them: a value the game reads at the start of a battle for armor (`battle_armor_scale`, 100 means unchanged), for disabling the medal (`battle_medal_disable`) and for forcing an encounter (`force_encounter`). Leave them `null` if you cannot find them; the matching trap is then dropped from seeds automatically. |
 

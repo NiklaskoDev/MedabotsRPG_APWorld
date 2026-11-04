@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import zipfile
+from collections import Counter
 from unittest import mock
 
 from BaseClasses import ItemClassification, LocationProgressType
@@ -12,10 +13,13 @@ from Options import OptionError
 
 from .. import MedabotsRPGWorld
 from ..constants import GAME_NAME
+from ..items import MedabotsItem
+from ..items import item_name_groups as build_item_name_groups
 from ..locations import progress_type
 from ..options import MedabotsOptions
+from ..rules import part_gate_thresholds
 from . import MedabotsTestBase
-from .support import make_options, unverified_data
+from .support import gendered_data, make_options, unverified_data
 
 NO_LOCATIONS = {
     "shuffle_medal_pickups": False, "shuffle_chests_and_pickups": False, "shuffle_npc_gifts": False,
@@ -122,6 +126,41 @@ class TestStandardBattleLogic(MedabotsTestBase):
         self.collect_all_but(parts)
         self.assertFalse(self.can_reach_region(late))
         self.collect_by_name(parts)
+        self.assertTrue(self.can_reach_region(late))
+
+
+class TestBattleLogicCountsOnlyUsableParts(MedabotsTestBase):
+    """Ikki's first Tinpet is male and cannot fit female parts (play-test), so those never open an area."""
+
+    options = {**MedabotsTestBase.options, **ALL_LOCATIONS, "battle_logic": "standard",
+               "part_weight": 100, "medal_weight": 0, "money_weight": 0, "trap_percentage": 0}
+
+    def setUp(self):
+        data = gendered_data()
+        for name, value in (("data", data), ("item_name_groups", build_item_name_groups(data))):
+            patcher = mock.patch.object(MedabotsRPGWorld, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        super().setUp()
+
+    def parts(self, gender):
+        return [i for i in self.world.data.items if i.kind == "part" and i.data["gender"] == gender]
+
+    def test_gates_are_sized_by_the_usable_parts_in_the_pool(self):
+        usable = sum(1 for i in self.multiworld.itempool if i.name in self.world.item_name_groups["Usable Medaparts"])
+        per_area = Counter(loc.area for loc in self.world.active_locations)
+        self.assertEqual(self.world.gates, part_gate_thresholds(self.world.data, "standard", usable, per_area))
+
+    def test_parts_of_the_other_gender_do_not_open_an_area(self):
+        late = self.world.data.areas[-1].name
+        needed = self.world.gates[late]
+        all_parts = self.world.item_name_groups["Medaparts"]
+        self.collect_all_but([i.name for i in self.multiworld.itempool if i.name in all_parts])
+        for part in self.parts("female")[:needed]:  # even if they were progression
+            self.multiworld.state.collect(MedabotsItem(part.name, ItemClassification.progression, part.id, self.player))
+        self.assertFalse(self.can_reach_region(late))
+        for part in self.parts("male")[:needed]:
+            self.multiworld.state.collect(self.world.create_item(part.name))
         self.assertTrue(self.can_reach_region(late))
 
 

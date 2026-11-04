@@ -18,10 +18,12 @@ from functools import cached_property, lru_cache
 from typing import Any, Protocol
 
 from .constants import (
+    GENDERS,
     GROUP_MEDALS,
     GROUP_MONEY,
     GROUP_PARTS,
     GROUP_TRAPS,
+    GROUP_USABLE_PARTS,
     KIND_CONSUMABLE,
     KIND_MEDAL,
     KIND_PART,
@@ -126,6 +128,9 @@ class GameTables:
     medals: tuple[str, ...]
     bots: tuple[str, ...]
     parts: tuple[tuple[str, ...], ...]
+    bot_genders: tuple[str, ...] | None
+    """Gender of every bot model ID, or ``None`` while it has not been extracted from a ROM."""
+    starting_tinpet_gender: str
     maps: tuple[str, ...]
     characters: tuple[str, ...]
     record_layouts: Mapping[str, Any]
@@ -305,6 +310,8 @@ def _parse_tables(raw: Mapping[str, Any]) -> GameTables:
         medals=tuple(raw["medals"]),
         bots=tuple(raw["bots"]),
         parts=tuple(tuple(row) for row in raw["parts"]),
+        bot_genders=None if raw.get("bot_genders") is None else tuple(raw["bot_genders"]),
+        starting_tinpet_gender=raw.get("starting_tinpet_gender", GENDERS[0]),
         maps=tuple(raw["maps"]),
         characters=tuple(raw["characters"]),
         record_layouts=raw["record_layouts"],
@@ -422,15 +429,22 @@ def _build_items(tables: GameTables, raw: Mapping[str, Any]) -> tuple[ItemDef, .
     items: list[ItemDef] = []
 
     for model, bot in enumerate(tables.bots):
+        # A list of the wrong length is reported by validate(); building the items must not fail before that.
+        genders = tables.bot_genders or ()
+        gender = genders[model] if model < len(genders) else None
+        # Until the genders are known every part counts as usable, which is how the logic worked before.
+        usable = (GROUP_USABLE_PARTS,) if gender in (None, tables.starting_tinpet_gender) else ()
         for slot in range(len(PART_SLOTS)):
             data: dict[str, Any] = {"model": model, "slot": slot, "bot": bot}
+            if gender is not None:
+                data["gender"] = gender
             if bot in exclusive_bots:
                 data["version_exclusive"] = exclusive_bots[bot]
             items.append(ItemDef(
                 id=bases["part"] + model * len(PART_SLOTS) + slot,
                 name=part_item_name(tables, model, slot),
                 kind=KIND_PART,
-                groups=(GROUP_PARTS, PART_SLOT_GROUPS[slot], bot),
+                groups=(GROUP_PARTS, *usable, PART_SLOT_GROUPS[slot], bot),
                 data=data,
             ))
     for medal_id, medal in enumerate(tables.medals):
@@ -577,6 +591,13 @@ def validate(data: WorldData) -> list[str]:
     if any(length < 1 for length in tables.opcode_lengths):
         problems.append("script_opcode_lengths contains a length below 1")
     problems += [f"duplicate bot name {name!r}" for name in _duplicates(tables.bots)]
+    if tables.bot_genders is not None:
+        if len(tables.bot_genders) != len(tables.bots):
+            problems.append(f"bot_genders has {len(tables.bot_genders)} entries but bots has {len(tables.bots)}")
+        problems += [f"bot_genders: unknown gender {g!r} (use {' or '.join(GENDERS)})"
+                     for g in sorted(set(tables.bot_genders) - set(GENDERS))]
+    if tables.starting_tinpet_gender not in GENDERS:
+        problems.append(f"starting_tinpet_gender must be one of {GENDERS}")
 
     # ROM versions
     for version in data.rom.versions:

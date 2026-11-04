@@ -125,3 +125,55 @@ class TestCommandLine(unittest.TestCase):
         code, _, error = self.run_main("/nonexistent/game.gba")
         self.assertEqual(code, 1)
         self.assertIn("error:", error)
+
+
+PART_TABLE = 0x200000
+FEMALE_MODELS = {m for m in range(1, len(DATA.tables.bots)) if m % 5 == 0} | {DATA.tables.bots.index("Aquacrown")}
+"""Model 0 stays male: the table's signature starts with its first record, whose gender byte is 0."""
+
+
+def rom_with_part_table(order="slot_major", odd_one_out=None):
+    """A ROM whose part table gives gender 1 to FEMALE_MODELS and 0 to the rest, in the given record order."""
+    bots, slots = len(DATA.tables.bots), 4
+    rom = bytearray(build_rom())
+    signature = DATA.rom.signatures["part_table"].pattern
+    for model in range(bots):
+        for slot in range(slots):
+            index = model * slots + slot if order == "model_major" else slot * bots + model
+            record = bytearray(16)
+            record[analyze_rom.GENDER_BYTE] = 1 if model in FEMALE_MODELS else 0
+            if (model, slot) == odd_one_out:
+                record[analyze_rom.GENDER_BYTE] ^= 1
+            rom[PART_TABLE + 16 * index:PART_TABLE + 16 * index + 16] = record
+    rom[PART_TABLE:PART_TABLE + len(signature)] = signature
+    return bytes(rom)
+
+
+class TestPartGenders(unittest.TestCase):
+    def expected(self):
+        return ["female" if m in FEMALE_MODELS else "male" for m in range(len(DATA.tables.bots))]
+
+    def test_genders_are_read_in_either_record_order(self):
+        for order in ("model_major", "slot_major"):
+            genders = analyze_rom.part_genders(rom_with_part_table(order), DATA)
+            self.assertEqual(genders["order"], order)
+            self.assertEqual(genders["bot_genders"], self.expected())
+            self.assertEqual(genders["references"]["Aquacrown"], {"found": "female", "expected": "female"})
+
+    def test_a_model_whose_parts_disagree_is_reported_not_guessed(self):
+        metabee = DATA.tables.bots.index("Metabee")
+        genders = analyze_rom.part_genders(rom_with_part_table(odd_one_out=(metabee, 2)), DATA)
+        self.assertNotIn("bot_genders", genders)
+        self.assertIn("Metabee", genders["error"])
+
+    def test_a_missing_table_is_reported(self):
+        genders = analyze_rom.analyze(rom_with_content())["part_genders"]
+        self.assertEqual(genders, {"table": None, "error": "the part table was not found"})
+
+    def test_the_summary_prints_the_list_to_paste(self):
+        report = analyze_rom.analyze(rom_with_part_table())
+        summary = analyze_rom.render_summary(report)
+        self.assertIn("slot major order", summary)
+        self.assertIn(json.dumps(self.expected()), summary)
+        self.assertIn("Aquacrown female", summary)
+        self.assertNotIn("EXPECTED", summary)

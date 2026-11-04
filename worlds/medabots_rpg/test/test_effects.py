@@ -19,6 +19,7 @@ from ..effects import (
 from .support import (
     ARMOR_SCALE,
     CHAPTER_BYTE,
+    ENCOUNTER_AREA,
     FLAG_BIT_MEDAL_ROOM,
     FLAG_BIT_SQUIDGUTS,
     FLAG_BIT_STORY_COMPLETE,
@@ -33,6 +34,7 @@ from .support import (
     RAM_BASE,
     SAFE,
     SHAPED_ENCOUNTER,
+    SHAPED_ENCOUNTER_AREA,
     SHAPED_FLAGS,
     SHAPED_MEDALS,
     SHAPED_MODE,
@@ -287,6 +289,82 @@ class TestTraps(unittest.TestCase):
         self.assertEqual(harness.memory.byte(FORCE_ENCOUNTER), 1, "second ambush of the series")
         self.assertEqual(len(harness.state.traps), 1)
 
+    def test_ambush_waits_for_a_map_with_random_encounters(self):
+        """Written anywhere else, the counter is reset by the next map load and the trap is lost (play-test TR-5)."""
+        harness = self.trap_harness()
+        harness.memory.set_byte(ENCOUNTER_AREA, 0)  # a town
+        harness.step(harness.receive("Ambush Trap", "Money Pouch (Small)"))
+        self.assertEqual(harness.memory.byte(FORCE_ENCOUNTER), 0, "not armed in town")
+        self.assertEqual(harness.state.applied_index, 2, "the items after it still arrive")
+        self.assertEqual(harness.memory.u32(MONEY), 1000 + SMALL_POUCH)
+        harness.step(harness.receive("Ambush Trap", "Money Pouch (Small)"), advance=TRAP_TIMEOUT_SECONDS * 10)
+        self.assertEqual(len(harness.state.traps), 1, "no timeout while it waits")
+        harness.memory.set_byte(ENCOUNTER_AREA, 1)  # walked onto a route
+        harness.step(harness.receive("Ambush Trap", "Money Pouch (Small)"))
+        self.assertEqual(harness.memory.byte(FORCE_ENCOUNTER), 1)
+
+    def test_ambush_is_taken_back_when_the_player_leaves_before_it_fires(self):
+        harness = self.trap_harness()
+        received = harness.receive("Ambush Trap")
+        harness.step(received)
+        self.assertTrue(harness.state.traps[0].armed)
+        harness.memory.set_byte(FORCE_ENCOUNTER, 0)  # the map load reset the counter
+        harness.memory.set_byte(ENCOUNTER_AREA, 0)
+        harness.step(received, advance=1.0)  # the client sees the new map within a poll
+        harness.step(received, advance=TRAP_TIMEOUT_SECONDS * 10)
+        self.assertEqual((len(harness.state.traps), harness.state.traps[0].armed), (1, False), "waiting again")
+        harness.memory.set_byte(ENCOUNTER_AREA, 1)
+        harness.step(received)
+        self.assertEqual(harness.memory.byte(FORCE_ENCOUNTER), 1, "armed again on the next encounter map")
+
+    def test_a_waiting_ambush_is_not_used_up_by_a_story_battle(self):
+        harness = self.trap_harness()
+        harness.memory.set_byte(ENCOUNTER_AREA, 0)
+        received = harness.receive("Ambush Trap")
+        harness.step(received)
+        harness.memory.set_byte(IN_BATTLE, 1)
+        harness.step(received)
+        harness.memory.set_byte(IN_BATTLE, 0)
+        harness.step(received)
+        self.assertEqual(len(harness.state.traps), 1)
+        harness.memory.set_byte(ENCOUNTER_AREA, 1)
+        harness.step(received)
+        self.assertEqual(harness.memory.byte(FORCE_ENCOUNTER), 1)
+
+    def test_ambush_is_never_armed_in_an_unsafe_state(self):
+        harness = self.trap_harness()
+        harness.memory.set_byte(ENCOUNTER_AREA, 0)
+        received = harness.receive("Ambush Trap")
+        harness.step(received)
+        harness.memory.set_byte(ENCOUNTER_AREA, 1)
+        harness.memory.set_byte(SAFE, 1)  # a dialogue on the route
+        harness.step(received)
+        self.assertEqual(harness.memory.byte(FORCE_ENCOUNTER), 0)
+        harness.memory.set_byte(SAFE, 0)
+        harness.step(received)
+        self.assertEqual(harness.memory.byte(FORCE_ENCOUNTER), 1)
+
+    def test_the_next_ambush_of_a_series_also_waits_for_an_encounter_map(self):
+        harness = self.trap_harness()
+        received = harness.receive("Ambush Trap")
+        harness.step(received, strength="harsh")
+        harness.memory.set_byte(FORCE_ENCOUNTER, 0)
+        harness.memory.set_byte(IN_BATTLE, 1)
+        harness.step(received, strength="harsh")
+        harness.memory.set_byte(IN_BATTLE, 0)
+        harness.memory.set_byte(ENCOUNTER_AREA, 0)  # the battle ended on a map without encounters
+        harness.step(received, strength="harsh")
+        self.assertEqual(harness.memory.byte(FORCE_ENCOUNTER), 0)
+        harness.memory.set_byte(ENCOUNTER_AREA, 1)
+        harness.step(received, strength="harsh")
+        self.assertEqual(harness.memory.byte(FORCE_ENCOUNTER), 1)
+
+    def test_without_the_encounter_area_an_ambush_is_armed_at_once(self):
+        harness = Harness(verified_data(with_encounter_area=False))
+        harness.memory.set_byte(ENCOUNTER_AREA, 0)  # not read: the memory map does not know the address
+        harness.step(harness.receive("Ambush Trap"))
+        self.assertEqual(harness.memory.byte(FORCE_ENCOUNTER), 1)
+
     def test_every_trap_is_lifted_after_a_timeout_even_if_no_battle_is_ever_reported(self):
         harness = self.trap_harness()
         harness.step(harness.receive("Rusty Armor Trap"))
@@ -323,6 +401,7 @@ class TestCalibratedShapes(unittest.TestCase):
     def harness(self):
         harness = Harness(self.data, medal_table=medal_table())
         harness.memory.set_byte(SHAPED_MODE, 1)  # the field
+        harness.memory.set_byte(SHAPED_ENCOUNTER_AREA, 1)  # on a map with random encounters
         return harness
 
     def snapshot(self, memory):

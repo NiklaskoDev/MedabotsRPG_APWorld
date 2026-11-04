@@ -290,6 +290,9 @@
     ["Reza-Rector", "Free Arm", "New Arm", "Fin"],
     ["Concealing", "Konpinch", "Konplier", "Duck Under"]
   ],
+  "_bot_genders_comment": "Gender of every bot model ID (all four of its parts share it), from byte 3 of the ROM's 16-byte part records. A Tinpet can only fit parts of its own gender; Ikki's first one is male. null until extracted from a real ROM with tools/analyze_rom.py (see docs/CALIBRATION.md); while null every part counts as usable.",
+  "bot_genders": null,
+  "starting_tinpet_gender": "male",
   "maps": [
     "Riverview City",
     "Riverview Public School - Courtyard",

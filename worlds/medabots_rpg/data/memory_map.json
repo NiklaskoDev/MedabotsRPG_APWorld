@@ -71,7 +71,7 @@
       }
     ],
     "in_field": {
-      "_comment": "The game's main mode (0x0300178C) is 1 in the field. The client reads check and goal flags only here, because choosing New Game fills the game's RAM with 0xFF (the event flags too) from the title menu on, which would otherwise look like every check made and the story finished. The mode is 3 at the title and boot screens, 0xFF after the fill, 2 between scenes and 0 in a Robattle or the B menu. Found in play-testing, see docs/CALIBRATION_NOTES.md.",
+      "_comment": "The game's main mode (0x0300178C) is 1 in the field. The client reads check and goal flags only here, because choosing New Game fills the game's RAM with 0xFF (the event flags too) from the title menu on, which would otherwise look like every check made and the story finished. The mode is 3 at the title and boot screens and in some cutscenes (the TV show in Ikki's room), 0xFF after the fill, 2 between scenes and 0 in a Robattle or the B menu. Found in play-testing, see docs/CALIBRATION_NOTES.md.",
       "address": "0x0300178C",
       "kind": "u8",
       "size": 1,
@@ -87,6 +87,12 @@
       "kind": "u8",
       "size": 1,
       "values": [32]
+    },
+    "encounter_area": {
+      "_comment": "Non-zero on maps with random encounters (script state + 0xC29): the step check at 0x080438C4 only advances force_encounter when it is set. An Ambush is armed only while it is set, because any other map load resets the counter to 0 and the trap would be lost (play-test TR-5). Read from the code, not yet watched live: confirm in TR-5. If it turns out wrong, set it to null and the client arms an Ambush at once, as before.",
+      "address": "0x03006409",
+      "kind": "u8",
+      "size": 1
     }
   },
   "hints": {

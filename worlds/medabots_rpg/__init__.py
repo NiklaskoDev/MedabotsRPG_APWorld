@@ -12,7 +12,7 @@ from Options import OptionError
 from worlds.AutoWorld import WebWorld, World
 
 from .client import MedabotsRPGClient  # noqa: F401  (unused, but importing it registers the BizHawk client)
-from .constants import GAME_NAME, KIND_PART
+from .constants import GAME_NAME, GROUP_USABLE_PARTS
 from .data_loader import LocationDef, WorldData, get_world_data
 from .items import MedabotsItem, PoolPlan, build_item_pool, item_classification, pouch_name_for_filler
 from .items import item_name_groups as build_item_name_groups
@@ -100,8 +100,13 @@ class MedabotsRPGWorld(World):
             logging.warning("Medabots RPG (%s): %s", self.player_name, note)
 
         per_area = Counter(loc.area for loc in self.active_locations)
+        # Only parts Ikki can fit on his first Tinpet count (all parts while their genders are not known).
         self.gates = part_gate_thresholds(self.data, self.options.battle_logic.current_key,
-                                          self.pool.count(self.data, KIND_PART), per_area)
+                                          self.pool.count_group(self.data, GROUP_USABLE_PARTS), per_area)
+        if self.gates and self.data.tables.bot_genders is None:
+            logging.warning("Medabots RPG (%s): the medaparts' genders are not in the world's data yet, so Battle "
+                            "Logic counts every part, also parts Ikki cannot fit on his first Tinpet.",
+                            self.player_name)
 
     def _enforce_verification_gate(self) -> None:
         """Refuse to build a seed from data that has not been checked against a real ROM (invariant G1)."""
@@ -168,7 +173,9 @@ class MedabotsRPGWorld(World):
         if not self.gates:
             return
         width = max(len(name) for name in self.gates)
-        spoiler_handle.write(f"\nMedabots RPG ({self.player_name}) - medaparts needed to enter an area:\n")
+        kind = "medaparts" if self.data.tables.bot_genders is None else \
+            f"{self.data.tables.starting_tinpet_gender} medaparts (they fit Ikki's first Tinpet)"
+        spoiler_handle.write(f"\nMedabots RPG ({self.player_name}) - {kind} needed to enter an area:\n")
         for area in self.data.areas:
             if area.name in self.gates:
                 spoiler_handle.write(f"  {area.name:<{width}}  {self.gates[area.name]:>3}\n")

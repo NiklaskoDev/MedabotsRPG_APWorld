@@ -24,7 +24,9 @@ the multiworld. The story, its order and its cutscenes are left exactly as they 
 
 **Items** that can be received:
 
-* **Medaparts**: any of the 480 heads, arms and legs, for example `Head: Psycho Missile (Noctobat)`.
+* **Medaparts**: any of the 480 heads, arms and legs, for example `Head: Psycho Missile (Noctobat)`. A part only fits
+  a Tinpet of its own gender. Ikki's first Tinpet is male, so a female part (marked ♀ in the Medaparts list) is not
+  offered in the build screen until he has a female Tinpet.
 * **Medals**: any of the medals, for example `Medal: Kabuto`.
 * **Money pouches**: $10, $50 or $200. These are the filler of the game.
 * **Traps**, if you enable them (see below).
@@ -38,9 +40,10 @@ be checks yet (the game does not record them), so that option currently adds not
 ## What do the logic options do?
 
 With **Battle Logic** on, later areas expect you to have collected some medaparts first, so you are never sent into a
-fight with a bare Medabot and nothing to improve it with. *Relaxed* asks for a small share of all medaparts in the
-pool, *Standard* for a larger one. The requirement for an area is always capped by the number of checks in the earlier
-areas, so it can never make a seed impossible. The spoiler log lists the numbers.
+fight with a bare Medabot and nothing to improve it with. Only parts that fit Ikki's first Tinpet (male parts) count:
+*Relaxed* asks for a small share of those in the pool, *Standard* for a larger one. The requirement for an area is
+always capped by the number of checks in the earlier areas, so it can never make a seed impossible. The spoiler log
+lists the numbers.
 
 ## What are traps?
 
@@ -51,7 +54,7 @@ Traps are filler items with a short, harmless sting. They are always temporary a
 | Money Drain | You lose a share of your money (never below zero). |
 | Rusty Armor | Your Medabot's armor is reduced for the next Robattle only. *Not available yet.* |
 | Medal Nap | Your medal's special ability is disabled for the next Robattle. *Not available yet.* |
-| Ambush | A random Robattle is triggered on your next step in an area with wild Robattles. |
+| Ambush | A random Robattle is triggered on your next step in an area with wild Robattles. Received anywhere else, it waits until you are in one. |
 
 Traps only take effect while you are walking around freely, never in the middle of a menu, a cutscene or a battle you
 did not choose, and a trap that cannot be applied yet waits instead of being lost. You choose how many there are,
@@ -60,8 +63,9 @@ which kinds, and how harsh they are.
 ## What happens when I receive an item?
 
 Received medaparts and medals are added to your collection straight away, and a short message appears on screen in
-BizHawk. If you are in a menu, a cutscene or a battle, the item waits until you are back in the overworld. Items are
-never lost: loading an older save simply gives you everything again.
+BizHawk. If you are in a menu, a cutscene or a battle, the item waits until you are back in the overworld. Medaparts
+and medals are never lost: loading an older save gives them all back. Money pouches and traps are applied only once,
+so the money you received after the save you load is gone, and traps are not repeated.
 
 ## Which game versions are supported?
 

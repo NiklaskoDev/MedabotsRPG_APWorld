@@ -2,13 +2,14 @@
 import random
 import unittest
 
+from BaseClasses import ItemClassification
 from rule_builder.rules import And, Has, HasGroup, Or, True_
 
 from ..constants import GROUP_PARTS
 from ..data_loader import DataError, DictDataSource, get_world_data, load_world_data
-from ..items import allocate, build_item_pool, eligible_parts_and_medals, supported_traps
+from ..items import allocate, build_item_pool, eligible_parts_and_medals, item_classification, supported_traps
 from ..rules import compile_rule, part_gate_thresholds
-from .support import make_options, raw_data, verified_data
+from .support import gendered_data, make_options, raw_data, verified_data
 
 DATA = get_world_data()
 KINDS = {item.name: item.kind for item in DATA.items}
@@ -193,3 +194,21 @@ class TestRuleCompilation(unittest.TestCase):
             compile_rule({"banana": 1})
         with self.assertRaises(DataError):
             compile_rule(42)
+
+
+class TestPartGenders(unittest.TestCase):
+    """Ikki's first Tinpet is male and cannot fit female parts (play-test), so only parts that fit drive the logic."""
+
+    data = gendered_data()
+
+    def part(self, gender):
+        return next(i for i in self.data.items if i.kind == "part" and i.data["gender"] == gender)
+
+    def test_battle_logic_only_needs_parts_that_fit(self):
+        options = make_options(battle_logic="standard")
+        self.assertEqual(item_classification(self.part("male"), options), ItemClassification.progression)
+        self.assertEqual(item_classification(self.part("female"), options), ItemClassification.useful)
+
+    def test_collect_medaparts_counts_every_part_whatever_its_gender(self):
+        options = make_options(goal="collect_medaparts", battle_logic="standard")
+        self.assertEqual(item_classification(self.part("female"), options), ItemClassification.progression)

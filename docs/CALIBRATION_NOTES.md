@@ -183,3 +183,29 @@ still have to be confirmed in BizHawk (cases SV-8 and CN-8).
 
 These changed `memory_map.json`, so seeds and patches made before the fix carry a different data hash and are refused by
 the fixed client: generate and patch them again.
+
+**Second run (`v0.1.0-rc2`).** Both fixes confirmed: a New Game sent nothing on all four versions, and the client
+resumed on the right server without a restart. LC-1 (Nae's medal room), the Robattle delivery cases, a received part
+and medal used in a real Robattle, and checks made offline or during a server outage all passed. New findings:
+
+* **Parts only fit a Tinpet of their own gender.** Ikki's first Tinpet is male. A received *Sacrifice Head
+  (Aquacrown)*, a female part (♀ in the Medaparts list), is never offered in the build screen; Rokusho's *Antenna* is.
+  The ROM's 16-byte part records keep the gender in byte 3. Battle Logic now counts only parts of the starting Tinpet's
+  gender (item group *Usable Medaparts*); the item pool is unchanged. The genders themselves are still to be read from
+  a ROM with `tools/analyze_rom.py` (`bot_genders` in `game_tables.json` is `null` until then, and every part counts).
+* **An Ambush received away from random encounters was lost** (TR-5): the counter is armed with 32 at once and the game
+  resets it to 0 on the next map load. An Ambush now waits, without a timeout, until the player is in the field on a map
+  with encounters, and is taken back if the player leaves before it fires. The map test is the byte at script state +
+  `0xC29` (`0x03006409`, new optional entry `encounter_area`), which the step check at `0x080438C4` tests; it was read
+  from the code and still has to be watched live (TR-5 again). A waiting Ambush lives in the client, so restarting the
+  client before it fires loses it.
+* **Main mode 3 is not only the title screen.** The TV show cutscene in Ikki's room runs in mode 3 as well. Nothing is
+  delivered or detected there, which is right.
+* **Nae's pedestals only describe their medals at first.** Taking one needs events 236-241 at value 1, which the game's
+  scripts 216, 231, 232 and 234 set later in the story. The play-test wrote that value to reach LC-1, so when it really
+  happens is not known yet. If it is after Riverview's chapters, location 20001 belongs to a later area (it decides the
+  area for Battle Logic): record it in the playthrough.
+* The medals named "?" and "!" get an empty name from the client (it only spells A to Z) and the game shows them as "?"
+  and "!".
+* Archipelago's own client sends every check it remembers again when it reconnects in the same process, even to a fresh
+  copy of the server. Test checks made offline with a fresh client process.

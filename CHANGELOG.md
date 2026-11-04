@@ -26,6 +26,14 @@ Calibration against Medabots: Metabee Version (USA) in BizHawk; see `docs/CALIBR
   value that switches it on.
 - State entries in `memory_map.json` may list several conditions that must all hold.
 - `tools/analyze_rom.py` lists every reward script by number, with what it gives and the flags it sets.
+- **Battle Logic counts only medaparts that fit Ikki's first Tinpet.** A part only fits a Tinpet of its own gender and
+  his first one is male (found in the play-test). New item group *Usable Medaparts*; parts of the other gender stay in
+  the pool but no longer open areas. The genders (`bot_genders` in `game_tables.json`) are read from a ROM by
+  `tools/analyze_rom.py`, which works out the part table's record order on its own; until they are filled in, every
+  part counts and generation warns.
+- **An Ambush waits for random encounters.** Received in a town or indoors, it is now armed only once the player is on
+  a map with random encounters (new optional memory-map entry `encounter_area`), instead of being lost on the next map
+  load.
 
 ### Changed
 
@@ -49,6 +57,10 @@ Calibration against Medabots: Metabee Version (USA) in BizHawk; see `docs/CALIBR
   only while the game is in the field and the flag table is not all `0xFF`. New required memory-map state `in_field`.
 - After connecting to the wrong server once (the "different multiworld" error), the client stayed stopped even when you
   connected to the right one, until it was restarted. A stop now lasts only for the connection that caused it.
+- The game page promised that loading an older save gives everything back; parts and medals come back, money received
+  since does not. It now says so.
+- `tools/dev.sh` did not find a virtualenv made by a Windows Python (programs in `Scripts\`), so it would have created
+  it again on every run in Git Bash.
 - `tools/analyze_rom.py` decoded the battle table's pointers as battle records.
 
 ### Removed

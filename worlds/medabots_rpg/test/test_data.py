@@ -3,7 +3,8 @@ import copy
 import unittest
 
 from ..data_loader import DataError, DictDataSource, get_world_data, load_world_data
-from .support import LARGE_POUCH, MEDIUM_POUCH, SMALL_POUCH, raw_data
+from ..items import item_name_groups
+from .support import LARGE_POUCH, MEDIUM_POUCH, SMALL_POUCH, gendered_data, raw_data
 
 
 class TestShippedData(unittest.TestCase):
@@ -86,6 +87,15 @@ class TestShippedData(unittest.TestCase):
         self.assertEqual((field.address, field.values), (safe.also[0].address, safe.also[0].values))
         self.assertEqual(field.address, battle.address, "the same byte, where 0 means a Robattle or the B menu")
 
+    def test_usable_parts_are_those_of_the_starting_tinpet_gender(self):
+        """Every part while the genders are unknown (the shipped data until extracted), else the matching ones."""
+        for data in (self.data, gendered_data()):
+            genders, tinpet = data.tables.bot_genders, data.tables.starting_tinpet_gender
+            expected = {item.name for item in data.items if item.kind == "part"
+                        and (genders is None or genders[item.data["model"]] == tinpet)}
+            self.assertEqual(item_name_groups(data)["Usable Medaparts"], expected)
+        self.assertLess(len(item_name_groups(gendered_data())["Usable Medaparts"]), 480)
+
     def test_story_areas_form_one_chain(self):
         parents = [a.parent for a in self.data.areas]
         self.assertEqual(parents[0], None)
@@ -159,6 +169,19 @@ class TestValidation(unittest.TestCase):
         def mutate(raw):
             raw["memory_map"]["tables"]["money"] = None
         self.assertRejected(mutate, "marked verified but is missing")
+
+    def test_bot_genders_must_name_every_bot_with_a_known_gender(self):
+        def short(raw):
+            raw["game_tables"]["bot_genders"] = ["male"] * 3
+
+        def unknown(raw):
+            raw["game_tables"]["bot_genders"] = ["robot"] * len(raw["game_tables"]["bots"])
+
+        def tinpet(raw):
+            raw["game_tables"]["starting_tinpet_gender"] = "robot"
+        self.assertRejected(short, "bot_genders has 3 entries")
+        self.assertRejected(unknown, "unknown gender 'robot'")
+        self.assertRejected(tinpet, "starting_tinpet_gender")
 
     def test_verified_memory_map_must_define_the_field_state(self):
         """Without it the client would read check and goal flags out of memory that New Game has wiped."""
