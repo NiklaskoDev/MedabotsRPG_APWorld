@@ -41,17 +41,27 @@ ensure_core() {
     echo "$AP_REF" > "$AP_DIR/.dev-ref"
 }
 
+# A virtualenv made by a Windows Python keeps its programs in Scripts\ as .exe files (Git Bash on Windows); everywhere
+# else they are in bin/. venv_bin NAME prints the path of program NAME inside the virtualenv.
+venv_bin() {
+    if [[ -e "$VENV_DIR/Scripts/python.exe" ]]; then
+        printf '%s\n' "$VENV_DIR/Scripts/$1.exe"
+    else
+        printf '%s\n' "$VENV_DIR/bin/$1"
+    fi
+}
+
 ensure_venv() {
     local stamp="$VENV_DIR/.requirements.sha256"
     local want
     want="$(sha256sum "$REPO_ROOT/requirements-dev.txt" | cut -d' ' -f1)"
-    if [[ ! -x "$VENV_DIR/bin/python" ]]; then
+    if [[ ! -x "$(venv_bin python)" ]]; then
         log "Creating virtualenv in ${VENV_DIR#"$REPO_ROOT"/}"
         "$PYTHON" -m venv "$VENV_DIR"
     fi
     if [[ ! -f "$stamp" || "$(cat "$stamp")" != "$want" ]]; then
         log "Installing development requirements"
-        "$VENV_DIR/bin/pip" install --quiet --disable-pip-version-check -r "$REPO_ROOT/requirements-dev.txt"
+        "$(venv_bin pip)" install --quiet --disable-pip-version-check -r "$REPO_ROOT/requirements-dev.txt"
         echo "$want" > "$stamp"
     fi
 }
@@ -63,7 +73,9 @@ sync_world() {
 }
 
 run_in_core() {
-    (cd "$AP_DIR" && SKIP_REQUIREMENTS_UPDATE=1 "$VENV_DIR/bin/python" "$@")
+    local python
+    python="$(venv_bin python)"
+    (cd "$AP_DIR" && SKIP_REQUIREMENTS_UPDATE=1 "$python" "$@")
 }
 
 cmd_setup() { ensure_core; ensure_venv; log "Ready. Run: tools/dev.sh test"; }
@@ -92,7 +104,7 @@ cmd_run() {
 cmd_lint() {
     ensure_venv
     log "Running ruff"
-    "$VENV_DIR/bin/ruff" check "$REPO_ROOT"
+    "$(venv_bin ruff)" check "$REPO_ROOT"
 }
 
 cmd_build() {
