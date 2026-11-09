@@ -5,8 +5,8 @@ This is the plan for it. Calibration ([CALIBRATION_NOTES.md](CALIBRATION_NOTES.m
 verified location works *when triggered from a savestate by a Lua script*. This plan shows that the whole thing works
 for a person playing the game, from the first minute to the ending, over a real server.
 
-Status: **plan, not yet run.** Copy this file (or its tables) into an issue or a `PLAYTEST_RESULTS.md` outside the
-repository and fill in the *Result* columns there; do not commit savestates, saves or ROMs.
+Status: **three runs so far**, recorded in [PLAYTEST_RESULTS.md](PLAYTEST_RESULTS.md); the story has been played to
+chapter 2. Record further runs there, not in this plan, and never commit savestates, saves or ROMs.
 
 ## What the play-test has to settle
 
@@ -25,8 +25,8 @@ In order of how much each can still go wrong:
 4. **Money and traps are counted, not state-based.** Loading an older save keeps parts and medals (they are re-asserted)
    but loses money received since, and a trap is never re-applied. This is by design; confirm it is acceptable.
 5. **An Ambush away from random encounters.** The first run showed that the game resets the encounter counter on the
-   next map load, so such an Ambush was lost. It now waits for a map with encounters, using an address read from the
-   code that still has to be watched live (TR-5).
+   next map load, so such an Ambush was lost. It now waits for a map with encounters; the third run confirmed the
+   address it reads for that (TR-5).
 6. **An item that cannot be written blocks the queue behind it** (nothing is lost, but nothing after it arrives either).
    The medal case is the likeliest cause.
 7. **Only four location categories have checks:** medals (1), chests and pickups (7), boss rewards (1), mini-game prizes
@@ -41,9 +41,11 @@ starting-Medabot choice.
 |---|---|
 | **P0.** Choosing New Game fills the game's RAM, the event flags included, with `0xFF`; the client read that as all 11 checks made and the story complete (Metabee USA and Rokusho USA; the Europe versions show the same RAM). | **Fixed and confirmed** in the second run (`v0.1.0-rc2`): SV-8 passed on all four versions. The with-save variant of SV-8 is confirmed on Metabee USA only. |
 | **P1.** After connecting a ROM to another seed's server once, the client stayed stopped on the right server too, until it was restarted. | **Fixed and confirmed** in the second run: CN-8 passed. |
-| **P1.** A part only fits a Tinpet of its own gender; Ikki's first Tinpet is male, so received female parts are unusable for a long time, while Battle Logic counted every part. | Fixed in code with tests: Battle Logic counts only parts that fit (item group *Usable Medaparts*); the pool is unchanged. **Data still missing:** run `analyze_rom.py` on all four ROMs and paste `bot_genders` (CALIBRATION.md, Step 0); until then every part counts and generation warns. Then run **IT-8**. |
-| **P1.** An Ambush received away from random encounters was lost: the next map load resets the counter (TR-5). | Fixed in code with tests: it waits until the player is on a map with encounters. The address it uses for that was read from the code; retest **TR-5** with its new expected result. |
+| **P1.** A part only fits a Tinpet of its own gender; Ikki's first Tinpet is male, so received female parts are unusable for a long time, while Battle Logic counted every part. | Fixed in code with tests: Battle Logic counts only parts that fit (item group *Usable Medaparts*); the pool is unchanged. **Data still missing** (the third run still saw the generation warning): run `analyze_rom.py` on all four ROMs and paste `bot_genders` (CALIBRATION.md, Step 0). Then run **IT-8**. |
+| **P1.** An Ambush received away from random encounters was lost: the next map load resets the counter (TR-5). | **Fixed and confirmed** in the third run: received in town the counter stayed 0 and `0x03006409` read 0; in the schoolyard it read 1, the Ambush armed and fired once. |
 | Game page: "loading an older save gives you everything again" (money received since is lost) and "a trap waits" (an Ambush did not). | Game page corrected; the Ambush now does wait. |
+| **Low.** A plain "inspect" text box ("It's a closed tool box.") leaves the script engine at 0 in the field, so the client delivers while it is open (DG-2, third run). | **Accepted for now:** no harm was seen, and such a box neither reads nor writes money, parts or medals. To close it, find a byte that marks an open text box (snapshots with a box open and closed, `ramdiff.py`) and add it as a third condition of `safe_to_deliver`. |
+| **Risk.** The B menu's Medabots and Medaparts screens show sub-scenes 3 and 5, which `in_battle` shares with a Robattle, so closing them read as the end of a battle and could use up a harsh Ambush's second fight (third run, from the values). | Fixed in code with tests: a trap counts a battle only after a sub-scene only a Robattle uses (6 to 9, new optional entry `battle_scene`). Retest **TR-9**. |
 
 Seeds and patches made before a data change are refused by the fixed client (the data hash changed); generate and patch
 again after every update of the world.
@@ -184,7 +186,7 @@ seconds in each state before leaving it.
 | ID | Pri | State | How | Expected | Result |
 |---|---|---|---|---|---|
 | DG-1 | P0 | Walking, town and dungeon | Walk around. | Delivered within a few seconds. | |
-| DG-2 | P0 | Dialogue | Talk to anyone. | Waits, then arrives once. | |
+| DG-2 | P0 | Dialogue | Talk to anyone. | Waits, then arrives once. A plain "inspect" text box (a sign, a tool box) is not held back (accepted, see the findings). | |
 | DG-3 | P0 | Chest or item pickup | Open a chest, stay in the text. | Waits, then arrives once. | |
 | DG-4 | P0 | B menu, Medawatch, parts screen | Open them. | Waits, then arrives once. | |
 | DG-5 | P0 | Cutscene | Any story scene. | Waits, then arrives once. | |
@@ -237,7 +239,7 @@ Make a savestate right before each.
 
 | ID | Pri | Location | What to do | Specific points | Result |
 |---|---|---|---|---|---|
-| LC-1 | P0 | 20001 Research Center, Nae's medal room | Take a medal (one of six). | Test at least two of the six choices; every one sends the check and none gives a medal. Passed in the second run with the pedestals unlocked by hand: **record the chapter in which they become selectable** in normal play (events 236-241 reach value 1). If it is after Riverview, the location belongs to a later area. | |
+| LC-1 | P0 | 20001 Research Center, Nae's medal room | Take a medal (one of six). | Test at least two of the six choices; every one sends the check and none gives a medal. **Passed in natural play** (third run): the story unlocks the pedestals in chapter 2, before Mt. Odori, so the Riverview area is right. | |
 | LC-2 | P0 | 20002 Odoro Marsh, broken parts room | Open the salvage. | No item received. | |
 | LC-3 | P0 | 20003 Odoro Marsh, Squidguts | Fight him for real. | Calibrated with its dialogue and battles blanked, so this is the first real run: no parts or medal, flag set, story continues. | |
 | LC-4 | P0 | 20004 Medabot Island, arcade | Play the $1 game until you win (play again after a loss if the game lets you). | The check is for a win only: a loss should send nothing (record it if it does). The win sends it once and the prize item is not received. The win was only forced before. | |
@@ -263,6 +265,7 @@ Inject with `/send Bee "<name>"`. Strength comes from the seed: normal on Seed A
 | TR-6 | P1 | Ambush on the way to a story battle or during a long walking scene. | Record whether it can fire at a bad moment or break a scene. | |
 | TR-7 | P1 | `/send Bee "Rusty Armor Trap"` and `/send Bee "Medal Nap Trap"`, then a pouch. | No effect in game, a message at most, and the pouch still arrives (these traps are not in seeds but must not jam the queue). | |
 | TR-8 | P0 | Send any trap during DG-4 to DG-8 states. | It waits and applies once when safe. | |
+| TR-9 | P1 | Receive a harsh Ambush on an encounter map, open the B menu's Medabots and Medaparts screens and close them (watch `0x03002B8C`), then win the ambush Robattle. Also open every other B-menu screen once. | After the menu visit the Ambush still fires; after its Robattle the second one of the series is armed and fires too. No B-menu screen shows sub-scene 6, 7, 8 or 9 (if one does, report it: `battle_scene` would count it as a battle). | |
 
 ## 9. Goals
 

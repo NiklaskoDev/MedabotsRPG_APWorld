@@ -197,15 +197,30 @@ and medal used in a real Robattle, and checks made offline or during a server ou
   resets it to 0 on the next map load. An Ambush now waits, without a timeout, until the player is in the field on a map
   with encounters, and is taken back if the player leaves before it fires. The map test is the byte at script state +
   `0xC29` (`0x03006409`, new optional entry `encounter_area`), which the step check at `0x080438C4` tests; it was read
-  from the code and still has to be watched live (TR-5 again). A waiting Ambush lives in the client, so restarting the
-  client before it fires loses it.
+  from the code and confirmed live in the third run. A waiting Ambush lives in the client, so restarting the client
+  before it fires loses it.
 * **Main mode 3 is not only the title screen.** The TV show cutscene in Ikki's room runs in mode 3 as well. Nothing is
   delivered or detected there, which is right.
 * **Nae's pedestals only describe their medals at first.** Taking one needs events 236-241 at value 1, which the game's
-  scripts 216, 231, 232 and 234 set later in the story. The play-test wrote that value to reach LC-1, so when it really
-  happens is not known yet. If it is after Riverview's chapters, location 20001 belongs to a later area (it decides the
-  area for Battle Logic): record it in the playthrough.
+  scripts 216, 231, 232 and 234 set later in the story. The second run wrote that value to reach LC-1; the third run
+  saw the story do it in chapter 2, after Nae and before Mt. Odori, so location 20001 rightly belongs to Riverview.
 * The medals named "?" and "!" get an empty name from the client (it only spells A to Z) and the game shows them as "?"
   and "!".
 * Archipelago's own client sends every check it remembers again when it reconnects in the same process, even to a fresh
   copy of the server. Test checks made offline with a fresh client process.
+
+**Third run (`b518f89`, story played to chapter 2 with a walkthrough).** LC-1 passed in natural play, as did a chest
+held open (DG-3), a real random Robattle (DG-7) and a forced one (TR-3). The Ambush waited in town and fired once in
+the schoolyard, which confirms `encounter_area` (TR-5). One location check and no goal were sent in the whole run.
+
+* **Plain "inspect" text boxes are not seen as busy.** A sign or a tool box shows its text with the script engine at 0
+  in main mode 1, so the client delivered (a pouch and its message) with the box open. No harm was seen and such boxes
+  touch none of the delivered tables, so this is accepted for now; a byte that marks an open text box would close it.
+* **Two B-menu screens look like a Robattle.** The Medawatch Medabots screen showed sub-scene 3 and the Medaparts screen
+  5, both values that `in_battle` lists for a Robattle. That only blocks delivery, which the menu does anyway, but
+  closing those screens read as the end of a battle and could use up a harsh Ambush's second fight. Traps now count a
+  battle only after a sub-scene that only a Robattle uses (6 to 9, new optional entry `battle_scene`, the same byte).
+  Which values the other B-menu screens use was not read: TR-9.
+* The playthrough stopped at Mt. Odori's water taxi (map 34): the sign there is plain text and starts no scene, and the
+  scene that follows hangs on a value chain of objects 393, 397 and 399 (event 399 still 0). A walkthrough step, not a world defect; savestate
+  `stop_water_taxi` is kept.

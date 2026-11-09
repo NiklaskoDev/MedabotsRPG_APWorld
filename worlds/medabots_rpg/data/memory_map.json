@@ -63,7 +63,7 @@
         "values": [0]
       },
       {
-        "_comment": "The mode-0 sub-scene (0x03002B8C, handlers at 0x083AC128): a battle runs through 6 (setup), 3, 7, 8, 9 (turns) and back to 6; 5 holds the battle-end code. The menu uses 1 (main menu) and 2 (Medawatch).",
+        "_comment": "The mode-0 sub-scene (0x03002B8C, handlers at 0x083AC128): a battle runs through 6 (setup), 3, 7, 8, 9 (turns) and back to 6; 5 holds the battle-end code. The menu uses 1 (main menu) and 2 (Medawatch), and the Medawatch Medabots and Medaparts screens 3 and 5 (play-test), so in_battle also holds there; it only blocks delivery, which those screens do anyway. Trap battle counting uses optional_tables.battle_scene.",
         "address": "0x03002B8C",
         "kind": "u8",
         "size": 1,
@@ -88,8 +88,15 @@
       "size": 1,
       "values": [32]
     },
+    "battle_scene": {
+      "_comment": "The mode-0 sub-scenes that only a Robattle uses: 6 (setup) and 7, 8, 9 (turns). A trap counts a battle as fought only once one of these was seen, because the B menu's Medabots and Medaparts screens use 3 and 5, which in_battle shares with a Robattle (play-test, third run), and leaving those screens would otherwise read as the end of a battle. Unknown (null): every in_battle state counts.",
+      "address": "0x03002B8C",
+      "kind": "u8",
+      "size": 1,
+      "values": [6, 7, 8, 9]
+    },
     "encounter_area": {
-      "_comment": "Non-zero on maps with random encounters (script state + 0xC29): the step check at 0x080438C4 only advances force_encounter when it is set. An Ambush is armed only while it is set, because any other map load resets the counter to 0 and the trap would be lost (play-test TR-5). Read from the code, not yet watched live: confirm in TR-5. If it turns out wrong, set it to null and the client arms an Ambush at once, as before.",
+      "_comment": "Non-zero on maps with random encounters (script state + 0xC29): the step check at 0x080438C4 only advances force_encounter when it is set. An Ambush is armed only while it is set, because any other map load resets the counter to 0 and the trap would be lost (play-test TR-5). Read from the code and confirmed in the third play-test run: 0 in town, 1 in the schoolyard, where an Ambush received in town armed and fired once. Set to null, the client arms an Ambush at once, as before.",
       "address": "0x03006409",
       "kind": "u8",
       "size": 1

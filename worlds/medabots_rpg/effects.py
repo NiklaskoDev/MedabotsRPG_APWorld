@@ -43,6 +43,9 @@ _TRAP_TABLE = {
     "medal_nap": "optional_tables.battle_medal_disable",
     "ambush": "optional_tables.force_encounter",
 }
+_BATTLE_SCENE = "optional_tables.battle_scene"
+"""Set in sub-scenes only a Robattle uses. The B menu's Medabots and Medaparts screens also satisfy in_battle, so a trap
+counts a battle only once this was seen; otherwise closing those screens would read as a battle ending."""
 _ENCOUNTER_AREA = "optional_tables.encounter_area"
 """Non-zero on maps with random encounters. An Ambush is only armed there: anywhere else the game would reset the
 encounter counter on the next map load and the trap would be lost."""
@@ -365,16 +368,23 @@ def _update_traps(ws: _Workspace, state: ClientState, in_battle: bool | None, no
         still_active.append(trap)
     state.traps = still_active
     if in_battle is not None:
-        state.was_in_battle = in_battle
+        fighting = _optional_flag(ws, _BATTLE_SCENE)  # None when unknown: then every battle state counts, as before
+        seen = in_battle and fighting is not False
+        state.was_in_battle = seen or (state.was_in_battle and in_battle)
+
+
+def _optional_flag(ws: _Workspace, path: str) -> bool | None:
+    """Whether a one-byte optional entry holds one of its values (or any non-zero one), ``None`` when it is unknown."""
+    buffer = ws.buffers.get(path)
+    if not buffer:
+        return None
+    ref = ws.memory_map.resolve(path)
+    return buffer[0] in ref.values if ref.values else bool(buffer[0])
 
 
 def _on_encounter_map(ws: _Workspace) -> bool | None:
     """Whether the current map has random encounters, or ``None`` when the memory map does not say."""
-    buffer = ws.buffers.get(_ENCOUNTER_AREA)
-    if not buffer:
-        return None
-    ref = ws.memory_map.resolve(_ENCOUNTER_AREA)
-    return buffer[0] in ref.values if ref.values else bool(buffer[0])
+    return _optional_flag(ws, _ENCOUNTER_AREA)
 
 
 def _arm_waiting_traps(ws: _Workspace, state: ClientState, now: float) -> None:

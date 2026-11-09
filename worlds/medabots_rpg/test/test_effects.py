@@ -18,6 +18,7 @@ from ..effects import (
 )
 from .support import (
     ARMOR_SCALE,
+    BATTLE_SCENE,
     CHAPTER_BYTE,
     ENCOUNTER_AREA,
     FLAG_BIT_MEDAL_ROOM,
@@ -365,6 +366,28 @@ class TestTraps(unittest.TestCase):
         harness.step(harness.receive("Ambush Trap"))
         self.assertEqual(harness.memory.byte(FORCE_ENCOUNTER), 1)
 
+    def test_closing_a_menu_that_looks_like_a_battle_does_not_use_up_a_trap(self):
+        harness = self.trap_harness()
+        received = harness.receive("Ambush Trap")
+        harness.step(received, strength="harsh")
+        harness.memory.set_byte(IN_BATTLE, 1)
+        harness.memory.set_byte(BATTLE_SCENE, 3)  # the B menu's Medabots screen satisfies in_battle as well
+        harness.step(received, strength="harsh")
+        harness.memory.set_byte(IN_BATTLE, 0)
+        harness.step(received, strength="harsh")
+        self.assertEqual((harness.state.traps[0].battles_left, harness.state.traps[0].armed), (2, True))
+
+    def test_without_the_battle_scene_every_battle_state_counts(self):
+        harness = Harness(verified_data(with_battle_scene=False))
+        received = harness.receive("Ambush Trap")
+        harness.step(received, strength="harsh")
+        harness.memory.set_byte(IN_BATTLE, 1)
+        harness.memory.set_byte(BATTLE_SCENE, 3)  # not read: the memory map does not know the address
+        harness.step(received, strength="harsh")
+        harness.memory.set_byte(IN_BATTLE, 0)
+        harness.step(received, strength="harsh")
+        self.assertEqual(harness.state.traps[0].battles_left, 1)
+
     def test_every_trap_is_lifted_after_a_timeout_even_if_no_battle_is_ever_reported(self):
         harness = self.trap_harness()
         harness.step(harness.receive("Rusty Armor Trap"))
@@ -489,6 +512,24 @@ class TestCalibratedShapes(unittest.TestCase):
         harness = self.harness()
         harness.step(harness.receive("Ambush Trap"))
         self.assertEqual(harness.memory.byte(SHAPED_ENCOUNTER), 32)
+
+    def test_the_medabots_screen_is_no_battle_for_a_trap_but_a_robattle_is(self):
+        """The B menu's Medabots (3) and Medaparts (5) screens share sub-scenes with a Robattle (play-test)."""
+        harness = self.harness()
+        received = harness.receive("Ambush Trap")
+        harness.step(received, strength="harsh")
+        for mode, scene in ((0, 3), (0, 5), (1, 0)):  # into the Medabots and Medaparts screens and back to the field
+            harness.memory.set_byte(SHAPED_MODE, mode)
+            harness.memory.set_byte(SHAPED_SCENE, scene)
+            harness.step(received, strength="harsh")
+        self.assertEqual(harness.state.traps[0].battles_left, 2, "a menu visit is not a battle")
+        harness.memory.set_byte(SHAPED_ENCOUNTER, 0)  # the game starts the Robattle and resets the counter
+        for mode, scene in ((0, 6), (0, 7), (0, 3), (0, 5), (1, 0)):  # setup, turns, the shared scenes, the field
+            harness.memory.set_byte(SHAPED_MODE, mode)
+            harness.memory.set_byte(SHAPED_SCENE, scene)
+            harness.step(received, strength="harsh")
+        self.assertEqual(harness.state.traps[0].battles_left, 1, "the Robattle counts once")
+        self.assertEqual(harness.memory.byte(SHAPED_ENCOUNTER), 32, "the second Ambush of the series is armed")
 
     def test_a_part_raises_its_count_from_zero_only(self):
         harness = self.harness()

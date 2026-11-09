@@ -34,6 +34,9 @@ Calibration against Medabots: Metabee Version (USA) in BizHawk; see `docs/CALIBR
 - **An Ambush waits for random encounters.** Received in a town or indoors, it is now armed only once the player is on
   a map with random encounters (new optional memory-map entry `encounter_area`), instead of being lost on the next map
   load.
+- **Traps count only real Robattles.** The B menu's Medabots and Medaparts screens share two sub-scenes with a
+  Robattle, so closing them counted as a battle ending and could use up a harsh Ambush's second fight. A battle now
+  counts once a sub-scene only a Robattle uses was seen (new optional memory-map entry `battle_scene`).
 
 ### Changed
 

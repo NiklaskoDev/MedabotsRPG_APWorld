@@ -35,6 +35,7 @@ ARMOR_SCALE = RAM_BASE + 0x410
 MEDAL_DISABLE = RAM_BASE + 0x411
 FORCE_ENCOUNTER = RAM_BASE + 0x412
 ENCOUNTER_AREA = RAM_BASE + 0x413
+BATTLE_SCENE = RAM_BASE + 0x414
 
 FLAG_BIT_SQUIDGUTS = 5
 FLAG_BIT_MEDAL_ROOM = 9
@@ -84,11 +85,11 @@ def gendered_data() -> WorldData:
 
 
 def verified_data(parts_layout: str = "model_major", with_optional: bool = True,
-                  with_encounter_area: bool = True) -> WorldData:
+                  with_encounter_area: bool = True, with_battle_scene: bool = True) -> WorldData:
     """The shipped data with a complete, invented memory map and verified locations.
 
     ``with_optional=False`` leaves the trap-only tables unknown, as a real calibration might;
-    ``with_encounter_area=False`` leaves only the encounter-area byte unknown.
+    ``with_encounter_area=False`` and ``with_battle_scene=False`` leave only that byte unknown.
     """
     raw = copy.deepcopy(raw_data())
     ref = lambda address, kind, size, **extra: {"address": hex(address), "kind": kind, "size": size, **extra}  # noqa: E731
@@ -110,6 +111,8 @@ def verified_data(parts_layout: str = "model_major", with_optional: bool = True,
             "battle_medal_disable": ref(MEDAL_DISABLE, "u8", 1) if with_optional else None,
             "force_encounter": ref(FORCE_ENCOUNTER, "u8", 1) if with_optional else None,
             "encounter_area": ref(ENCOUNTER_AREA, "u8", 1) if with_optional and with_encounter_area else None,
+            "battle_scene": ref(BATTLE_SCENE, "u8", 1, values=[6, 7, 8, 9]) if with_optional and with_battle_scene
+            else None,
         },
     )
     raw["regions"]["goal_detect"] = {"type": "flag", "table": "game_flags", "bit": FLAG_BIT_STORY_COMPLETE}
@@ -137,6 +140,7 @@ def shaped_data() -> WorldData:
     state["in_field"]["address"] = hex(SHAPED_MODE)
     raw["memory_map"]["optional_tables"]["force_encounter"]["address"] = hex(SHAPED_ENCOUNTER)
     raw["memory_map"]["optional_tables"]["encounter_area"]["address"] = hex(SHAPED_ENCOUNTER_AREA)
+    raw["memory_map"]["optional_tables"]["battle_scene"]["address"] = hex(SHAPED_SCENE)  # the same byte as in_battle
     raw["regions"]["goal_status"] = "verified"
     for entry in raw["locations"]["locations"]:
         if entry["status"] != "absent":
@@ -156,6 +160,7 @@ class FakeMemory:
         # The invented layout starts out in the field, on a map with random encounters; tests move it away from there.
         self.ram[IN_FIELD - RAM_BASE] = 1
         self.ram[ENCOUNTER_AREA - RAM_BASE] = 1
+        self.ram[BATTLE_SCENE - RAM_BASE] = 6  # a Robattle's setup scene, so a set IN_BATTLE reads as a real battle
 
     def _domain(self, name: str) -> tuple[bytearray, int]:
         return (self.ram, RAM_BASE) if name == SYSTEM_BUS else (self.rom, 0)
